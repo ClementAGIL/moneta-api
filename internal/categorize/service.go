@@ -29,12 +29,18 @@ type Service struct {
 	model ModelSource
 }
 
-func NewService(db *pgxpool.Pool, keys KeySource, model ModelSource) *Service {
-	return &Service{db: db, keys: keys, model: model}
+func NewService(db *pgxpool.Pool, keys KeySource) *Service {
+	return &Service{db: db, keys: keys}
 }
 
-// Engine builds the user's engine (rules, default category ids, model).
-func (s *Service) Engine(ctx context.Context, userID uuid.UUID, keys *vault.UserKeys) (*Engine, error) {
+// UseModel plugs the classifier in (set after construction: the ml package depends on this one).
+func (s *Service) UseModel(model ModelSource) {
+	s.model = model
+}
+
+// Engine builds the user's engine (rules, default category ids, and the model when withModel is set).
+func (s *Service) Engine(ctx context.Context, userID uuid.UUID, keys *vault.UserKeys,
+	withModel bool) (*Engine, error) {
 	rules, err := s.Rules(ctx, userID, keys)
 	if err != nil {
 		return nil, err
@@ -44,7 +50,7 @@ func (s *Service) Engine(ctx context.Context, userID uuid.UUID, keys *vault.User
 		return nil, err
 	}
 	var model Predictor
-	if s.model != nil {
+	if withModel && s.model != nil {
 		if model, err = s.model(ctx, userID); err != nil {
 			return nil, err
 		}
@@ -59,7 +65,7 @@ func (s *Service) Recategorize(ctx context.Context, userID uuid.UUID, importID *
 	if err != nil {
 		return err
 	}
-	engine, err := s.Engine(ctx, userID, keys)
+	engine, err := s.Engine(ctx, userID, keys, true)
 	if err != nil {
 		return err
 	}
@@ -94,4 +100,19 @@ func (s *Service) apply(ctx context.Context, userID uuid.UUID, importID *uuid.UU
 		return err
 	}
 	return s.db.SendBatch(ctx, batch).Close()
+}
+
+// Explain says why transaction (label, amount) got its automatic category.
+func (s *Service) Explain(ctx context.Context, userID uuid.UUID, label string,
+	amount int64) (Decision, []string, error) {
+	keys, err := s.keys.Keys(ctx, userID)
+	if err != nil {
+		return Decision{}, nil, err
+	}
+	engine, err := s.Engine(ctx, userID, keys, true)
+	if err != nil {
+		return Decision{}, nil, err
+	}
+	d, reasons := engine.Explain(Txn{Label: label, Amount: amount})
+	return d, reasons, nil
 }

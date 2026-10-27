@@ -10,6 +10,8 @@ import (
 
 	"github.com/ClementAGIL/moneta-api/internal/apperr"
 	"github.com/ClementAGIL/moneta-api/internal/categorize"
+	"github.com/ClementAGIL/moneta-api/internal/jobs"
+	"github.com/ClementAGIL/moneta-api/internal/ml"
 	"github.com/ClementAGIL/moneta-api/internal/transactions"
 )
 
@@ -56,7 +58,18 @@ func (s *server) editTransaction(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSON(r, &u); err != nil {
 		return err
 	}
-	return respond(w)(s.Transactions.Edit(r.Context(), userID(r), id, u, s.Categorize.CorrectMerchant))
+	t, err := s.Transactions.Edit(r.Context(), userID(r), id, u, s.Categorize.CorrectMerchant)
+	if err != nil {
+		return err
+	}
+	if u.CategoryID != nil && !u.ApplyToMerchant {
+		// A correction without a rule is exactly what the model learns from.
+		if err := jobs.EnqueueOnce(r.Context(), s.DB, ml.JobKind, userID(r)); err != nil {
+			return err
+		}
+	}
+	writeJSON(w, http.StatusOK, t)
+	return nil
 }
 
 func (s *server) listRules(w http.ResponseWriter, r *http.Request) error {

@@ -48,6 +48,7 @@ type Decision struct {
 // Predictor is the trained classifier (nil until active).
 type Predictor interface {
 	Predict(label string, amount int64) (uuid.UUID, float32, bool)
+	Explain(label string, amount int64, class uuid.UUID) []string
 }
 
 // Engine categorizes one user's transactions.
@@ -70,25 +71,32 @@ func NewEngine(rules []Rule, byKey map[string]uuid.UUID, model Predictor) *Engin
 
 // Categorize applies the pipeline to one transaction.
 func (e *Engine) Categorize(t Txn) Decision {
+	d, _ := e.Explain(t)
+	return d
+}
+
+// Explain is Categorize plus why: the rule pattern, the built-in keyword, or the model's strongest tokens.
+func (e *Engine) Explain(t Txn) (Decision, []string) {
 	norm := labels.Normalize(t.Label)
 	merchant := labels.Merchant(norm)
 	for _, r := range e.rules {
 		if signMatches(r.Sign, t.Amount) && ruleMatches(r, norm, merchant) {
-			return decision(r.CategoryID, SourceRule, ruleConfidence)
+			return decision(r.CategoryID, SourceRule, ruleConfidence), []string{r.Pattern}
 		}
 	}
 	padded := " " + norm + " "
 	for _, b := range builtins {
-		if id, ok := e.byKey[b.key]; ok && signMatches(b.sign, t.Amount) && strings.Contains(padded, " "+b.keyword+" ") {
-			return decision(id, SourceBuiltin, builtinConfidence)
+		id, ok := e.byKey[b.key]
+		if ok && signMatches(b.sign, t.Amount) && strings.Contains(padded, " "+b.keyword+" ") {
+			return decision(id, SourceBuiltin, builtinConfidence), []string{b.keyword}
 		}
 	}
 	if e.model != nil {
 		if id, confidence, ok := e.model.Predict(t.Label, t.Amount); ok {
-			return decision(id, SourceModel, confidence)
+			return decision(id, SourceModel, confidence), e.model.Explain(t.Label, t.Amount, id)
 		}
 	}
-	return Decision{}
+	return Decision{}, nil
 }
 
 // Matches reports whether rule r applies to t (used by the rule preview).

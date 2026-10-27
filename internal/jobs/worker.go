@@ -84,7 +84,13 @@ func (w *Worker) claim(ctx context.Context) (Job, error) {
 	return job, err
 }
 
-func (w *Worker) execute(ctx context.Context, job Job) error {
+// execute runs the job's handler; a panic becomes the job's error instead of killing the server.
+func (w *Worker) execute(ctx context.Context, job Job) (err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			err = fmt.Errorf("panic: %v", v)
+		}
+	}()
 	handler, ok := w.handlers[job.Kind]
 	if !ok {
 		return fmt.Errorf("no handler for job kind %q", job.Kind)

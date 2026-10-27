@@ -45,7 +45,7 @@ JSON under `/api/v1`. Done so far: `POST /auth/register`, `/auth/login`, `/auth/
 `GET /me`, CRUD on `/banks`, `/accounts`, `/categories`; imports (`POST /imports` multipart
 `file` → preview + suggested mapping, `PUT /imports/{id}/mapping`, `POST /imports/{id}/commit`, `DELETE` to cancel or
 undo, `GET /imports`), `/import-profiles`; `GET /transactions` (filters, `q` search, cursor) and `PATCH /transactions/{id}`; `/rules` CRUD
-and `POST /rules/preview`; `/stats/summary`, `/stats/categories`, `/stats/merchants`; `/recurring` and transfer pairing; `/budgets`, `/insights`. Full contract:
+and `POST /rules/preview`; `/stats/summary`, `/stats/categories`, `/stats/merchants`; `/recurring` and transfer pairing; `/budgets`, `/insights`; `/model` and `/transactions/{id}/explain`. Full contract:
 [docs/openapi.yaml](docs/openapi.yaml); probes `GET /api/health` and `/api/ready`. Errors look like
 `{"error": {"code": "validation", "message": "...", "fields": {...}}}`.
 

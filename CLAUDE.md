@@ -26,7 +26,8 @@ No unit tests by default (user's rule); verify with `go vet`, `golangci-lint`, `
 | `go build ./... && go vet ./...`     | Compile and vet (run before calling a change done) |
 | `gofmt -l .`                         | Must print nothing                            |
 | `psql -U postgres -v pw=… -f testdata/                 synthetic bank exports for manual import tests (never real data)
-scripts/gen-testdata.mjs  regenerates testdata/demo-*.csv (6 months, subscriptions, price change, transfers)
+scripts/gen-testdata.mjs  regenerates testdata/demo-*.csv (12 months: subscriptions, price change, transfers, a bakery
+                          no rule knows, for the classifier)
 scripts/create-db.sql` | One-time: create the `moneta` role + database |
 | `docker compose up -d --build`       | Optional full stack in containers (not usable on the dev PC) |
 
@@ -35,8 +36,8 @@ scripts/create-db.sql` | One-time: create the `moneta` role + database |
 ```
 cmd/moneta/main.go        entry point: config → DB open + migrate → job worker + HTTP server, graceful shutdown
 cmd/moneta/wire.go        builds services, hooks (import commit → categorize, then queue analyze.user) and job
-                          handlers (categorize.user; analyze.user = transfers → recurring → insights for this and last
-                          month); schedules: imports.expire hourly, analyze.daily for every user with data
+                          handlers (categorize.user; model.retrain; analyze.user = transfers → model → categorize →
+                          recurring → insights for this and last month); corrections queue model.retrain once; schedules: imports.expire hourly, analyze.daily for every user with data
 internal/config/          .env (if present, real env wins) + env → Config (see .env.example)
 internal/db/              pgx pool (Open), goose migrations from the embedded migrations/ (Migrate)
 internal/jobs/            scheduler.go Every(interval); queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
@@ -61,8 +62,12 @@ internal/imports/         Service: Upload (grid encrypted, profile by fingerprin
                           classify → import_rows; profile upsert), Commit (→ transactions, merchant + blind index),
                           Delete (cancel or undo), Get/List (summary.go)
 internal/categorize/      engine.go: user rules (priority, corrections first) → builtin.go French merchant keywords →
-                          model (Predictor, later) → uncategorized; service.go: Recategorize (all or one import,
+                          model (Predictor, plugged in by wire.go via UseModel) → uncategorized; Explain gives why; service.go: Recategorize (all or one import,
                           skips user/transfer); rules.go: encrypted rules CRUD, Preview, CorrectMerchant (upsert)
+internal/ml/               own Naive Bayes: features.go (words, word pairs, merchant trigrams, sign, amount magnitude),
+                          naivebayes.go (Train/Add/Predict softmax/Explain, words first), evaluate.go (holdout =
+                          newest 20 %, model vs rules on hand-categorized), service.go (Retrain, encrypted gob in
+                          models, Predictor when active: ≥ 200 samples and ≥ 75 % accuracy; confidence ≥ 0.6)
 internal/transactions/    List (filters, keyset cursor, text search in Go on decrypted labels), Get, Edit (category
                           → source user, optional merchant rule; note)
 internal/transfers/       Detect (one-to-one opposite amounts, different accounts, ±3 days → category "transfers"),
@@ -80,11 +85,11 @@ internal/insights/        insights.go Generate (run rules, upsert by kind/period
 internal/stats/           Summary (month vs previous + 6-month average, savings rate, by top-level category),
                           Categories (monthly series), Merchants (top by spending); transfers/excluded ignored
 internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go;
-                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); budgets_handlers.go (+ insights); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); budgets_handlers.go (+ insights); model_handlers.go (+ explain); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
                           body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
-migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules, 00006 recurring, 00007 budgets/insights + recurring.first_date), embedded by embed.go
+migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules, 00006 recurring, 00007 budgets/insights + recurring.first_date, 00008 models), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
@@ -106,6 +111,8 @@ transaction).
 - Sensitive text (labels, merchants, notes, rule patterns) is stored encrypted (`_enc` columns, `internal/crypto`);
   equality lookups use blind indexes (`_key` columns). Amounts, dates and categories stay plain for SQL aggregates.
 - Uploaded files are never written to disk.
+- Package-level values must be safe for concurrent use (handlers and the job worker run in parallel): no shared
+  stateful transformers, buffers or maps without a lock.
 - Errors: wrap with `fmt.Errorf("doing x: %w", err)`; handlers map them to `{"error": {code, message}}`.
 - Idiomatic Go: `gofmt`, small interfaces, `context.Context` first, no globals except constants. Go constants are
   `camelCase` (Go style), grouped at the top of the file so tuning is easy.
@@ -137,4 +144,8 @@ transaction).
 - ✅ M7: transfers (auto + manual), recurring series and subscriptions with price changes, analyze.user job.
   Tested with testdata/demo-*.csv.
 - ✅ M8: budgets, insights (8 rules), scheduler (import expiry, daily analysis). Averages use only months with data.
-- Next: W7 (budgets + insights in the web app), then M9 (classifier).
+- ✅ W7 done in moneta-app.
+- ✅ M9: own Naive Bayes classifier, holdout evaluation, explanations. Tested: 12 hand corrections of an unknown
+  bakery → the 36 others categorized by the model (90 % holdout accuracy). Fixed: labels.Normalize shared a
+  stateful transformer across goroutines (crash under concurrent import + job); job panics are now recovered.
+- Next: W8 (model status, "why this category"), then M10 (forecast).

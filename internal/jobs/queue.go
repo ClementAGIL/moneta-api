@@ -26,6 +26,15 @@ type Job struct {
 	Attempts int // including the current one
 }
 
+// EnqueueOnce queues a job for the user unless one of the same kind is already waiting (repeated triggers, such as
+// several corrections in a row, then cost one run).
+func EnqueueOnce(ctx context.Context, db Execer, kind string, userID uuid.UUID) error {
+	_, err := db.Exec(ctx, `INSERT INTO jobs (id, kind, user_id) SELECT $1, $2, $3
+		WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE kind = $2 AND user_id = $3 AND done_at IS NULL
+		  AND (locked_until IS NULL OR locked_until < now()))`, uuid.Must(uuid.NewV7()), kind, userID)
+	return err
+}
+
 // Enqueue schedules a job of the given kind to run at runAt (time.Time{} = now).
 func Enqueue(ctx context.Context, db Execer, kind string, userID *uuid.UUID, payload any, runAt time.Time) error {
 	body, err := json.Marshal(payload)

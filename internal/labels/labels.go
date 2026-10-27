@@ -43,11 +43,14 @@ var stopWords = map[string]bool{
 	"NICE": true, "RENNES": true, "STRASBOURG": true, "MONTPELLIER": true, "GRENOBLE": true, "CEDEX": true,
 }
 
-var stripAccents = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+// stripAccents builds a fresh transformer each time: transformers keep state and are not safe for concurrent use.
+func stripAccents() transform.Transformer {
+	return transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+}
 
 // Normalize uppercases, removes accents, card numbers, dates and references, and collapses spaces.
 func Normalize(label string) string {
-	s, _, _ := transform.String(stripAccents, strings.ToUpper(label))
+	s, _, _ := transform.String(stripAccents(), strings.ToUpper(label))
 	s = cardNumber.ReplaceAllString(s, " ")
 	s = dateLike.ReplaceAllString(s, " ")
 	s = longNumber.ReplaceAllString(s, " ")

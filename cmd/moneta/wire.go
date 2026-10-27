@@ -17,6 +17,7 @@ import (
 	"github.com/ClementAGIL/moneta-api/internal/imports"
 	"github.com/ClementAGIL/moneta-api/internal/insights"
 	"github.com/ClementAGIL/moneta-api/internal/jobs"
+	"github.com/ClementAGIL/moneta-api/internal/ml"
 	"github.com/ClementAGIL/moneta-api/internal/recurring"
 	"github.com/ClementAGIL/moneta-api/internal/stats"
 	"github.com/ClementAGIL/moneta-api/internal/transactions"
@@ -33,6 +34,7 @@ type services struct {
 	transfers   *transfers.Service
 	recurring   *recurring.Service
 	insights    *insights.Service
+	model       *ml.Service
 }
 
 // wire returns the HTTP dependencies and the function starting the background work (job worker, schedules).
@@ -41,13 +43,15 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 	authSvc := auth.NewService(pool, kek, cfg.JWTSecret, categories.Seed)
 	svc := services{
 		auth:        authSvc,
-		categorizer: categorize.NewService(pool, authSvc, nil),
+		categorizer: categorize.NewService(pool, authSvc),
 		transfers:   transfers.NewService(pool),
 		recurring:   recurring.NewService(pool, authSvc),
 		insights:    insights.NewService(pool),
 	}
+	svc.model = ml.NewService(pool, authSvc, svc.categorizer)
+	svc.categorizer.UseModel(svc.model.Predictor)
 	queueAnalysis := func(ctx context.Context, userID uuid.UUID) error {
-		return jobs.Enqueue(ctx, pool, analyzeJob, &userID, struct{}{}, time.Time{})
+		return jobs.EnqueueOnce(ctx, pool, analyzeJob, userID)
 	}
 	afterImport := func(ctx context.Context, userID, importID uuid.UUID) error {
 		if err := svc.categorizer.Recategorize(ctx, userID, &importID); err != nil {
@@ -67,6 +71,7 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 		Transfers:    svc.transfers,
 		Recurring:    svc.recurring,
 		Insights:     svc.insights,
+		Model:        svc.model,
 		Analyze:      queueAnalysis,
 		WebDir:       cfg.WebDir,
 		CookieSecure: cfg.CookieSecure,
@@ -96,20 +101,37 @@ func (svc services) worker(pool *pgxpool.Pool, logger *slog.Logger) *jobs.Worker
 	worker.Handle(categorize.JobKind, func(ctx context.Context, job jobs.Job) error {
 		return svc.categorizer.Recategorize(ctx, *job.UserID, nil)
 	})
-	worker.Handle(analyzeJob, func(ctx context.Context, job jobs.Job) error {
-		if _, err := svc.transfers.Detect(ctx, *job.UserID); err != nil {
+	worker.Handle(ml.JobKind, func(ctx context.Context, job jobs.Job) error {
+		if err := svc.model.Retrain(ctx, *job.UserID); err != nil {
 			return err
 		}
-		if err := svc.recurring.Refresh(ctx, *job.UserID); err != nil {
-			return err
-		}
-		month := thisMonth()
-		if err := svc.insights.Generate(ctx, *job.UserID, month.AddDate(0, -1, 0)); err != nil {
-			return err
-		}
-		return svc.insights.Generate(ctx, *job.UserID, month)
+		return svc.categorizer.Recategorize(ctx, *job.UserID, nil)
 	})
+	worker.Handle(analyzeJob, svc.analyze)
 	return worker
+}
+
+// analyze: transfers first (they leave the stats), then the model learns from the categorized rest and fills the
+// gaps, then recurring series and insights see the final categories.
+func (svc services) analyze(ctx context.Context, job jobs.Job) error {
+	userID := *job.UserID
+	if _, err := svc.transfers.Detect(ctx, userID); err != nil {
+		return err
+	}
+	if err := svc.model.Retrain(ctx, userID); err != nil {
+		return err
+	}
+	if err := svc.categorizer.Recategorize(ctx, userID, nil); err != nil {
+		return err
+	}
+	if err := svc.recurring.Refresh(ctx, userID); err != nil {
+		return err
+	}
+	month := thisMonth()
+	if err := svc.insights.Generate(ctx, userID, month.AddDate(0, -1, 0)); err != nil {
+		return err
+	}
+	return svc.insights.Generate(ctx, userID, month)
 }
 
 func thisMonth() time.Time {
