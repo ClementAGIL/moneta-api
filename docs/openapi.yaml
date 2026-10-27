@@ -1,0 +1,615 @@
+openapi: 3.1.0
+info:
+  title: Moneta API
+  version: 0.1.0
+  description: >
+    Spending analyzer API. All amounts are signed integer cents (negative = money out), dates are YYYY-MM-DD, months
+    YYYY-MM. Authenticated routes need `Authorization: Bearer <accessToken>`. Errors use the Error schema.
+servers:
+  - url: /api/v1
+security:
+  - bearer: []
+paths:
+  /auth/register:
+    post:
+      security: []
+      summary: Create an account and start a session
+      requestBody: { $ref: '#/components/requestBodies/Credentials' }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /auth/login:
+    post:
+      security: []
+      summary: Start a session (web gets the refresh token as an HttpOnly cookie, mobile in the body)
+      requestBody: { $ref: '#/components/requestBodies/Credentials' }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /auth/refresh:
+    post:
+      security: []
+      summary: Rotate the refresh token (cookie, or body for mobile)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      security: []
+      summary: End this device's session
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '204': { description: Logged out }
+  /me:
+    get:
+      summary: Current user
+      responses:
+        '200':
+          description: The user
+          content: { application/json: { schema: { $ref: '#/components/schemas/User' } } }
+  /banks:
+    get:
+      summary: List banks
+      responses:
+        '200':
+          description: Banks
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Bank' } } } }
+    post:
+      summary: Create a bank
+      requestBody: { $ref: '#/components/requestBodies/Name' }
+      responses:
+        '201':
+          description: Created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Bank' } } }
+        '409': { $ref: '#/components/responses/Error' }
+  /banks/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      summary: Rename a bank
+      requestBody: { $ref: '#/components/requestBodies/Name' }
+      responses:
+        '204': { description: Renamed }
+    delete:
+      summary: Delete a bank with its accounts and transactions
+      responses:
+        '204': { description: Deleted }
+  /accounts:
+    get:
+      summary: List accounts with balances
+      responses:
+        '200':
+          description: Accounts
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Account' } } } }
+    post:
+      summary: Create an account
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AccountInput' } } }
+      responses:
+        '201':
+          description: Created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } }
+  /accounts/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      summary: Update an account (name, kind, anchor balance)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AccountInput' } } }
+      responses:
+        '200':
+          description: Updated
+          content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } }
+    delete:
+      summary: Delete an account and its transactions
+      responses:
+        '204': { description: Deleted }
+  /categories:
+    get:
+      summary: Category tree, parents first, each followed by its children
+      responses:
+        '200':
+          description: Categories
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Category' } } } }
+    post:
+      summary: Create a category
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CategoryInput' } } }
+      responses:
+        '201':
+          description: Created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } }
+  /categories/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      summary: Update a category
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CategoryInput' } } }
+      responses:
+        '200':
+          description: Updated
+          content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } }
+    delete:
+      summary: Delete a category (its transactions become uncategorized)
+      responses:
+        '204': { description: Deleted }
+  /imports:
+    get:
+      summary: Import history, newest first
+      responses:
+        '200':
+          description: Imports
+          content:
+            application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ImportSummary' } } }
+    post:
+      summary: Upload a bank export (CSV or XLSX, 5 MB max)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Preview and suggested mapping
+          content: { application/json: { schema: { $ref: '#/components/schemas/ImportPreview' } } }
+        '422': { $ref: '#/components/responses/Error' }
+  /imports/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: Import with its staged rows (until commit)
+      responses:
+        '200':
+          description: Import
+          content: { application/json: { schema: { $ref: '#/components/schemas/ImportSummary' } } }
+    delete:
+      summary: Cancel an open import, or undo a committed one (deletes its transactions)
+      responses:
+        '204': { description: Done }
+  /imports/{id}/mapping:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put:
+      summary: Parse with this mapping into the account and classify rows (new, duplicate, review, invalid)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MappingRequest' } } }
+      responses:
+        '200':
+          description: Staged rows
+          content: { application/json: { schema: { $ref: '#/components/schemas/ImportSummary' } } }
+  /imports/{id}/commit:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      summary: Insert new rows and the kept review rows
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keep: { type: array, items: { type: integer } }
+      responses:
+        '200':
+          description: Committed
+          content: { application/json: { schema: { $ref: '#/components/schemas/ImportSummary' } } }
+  /import-profiles:
+    get:
+      summary: Saved file formats
+      responses:
+        '200':
+          description: Profiles
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Profile' } } } }
+  /import-profiles/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    delete:
+      summary: Forget a saved format
+      responses:
+        '204': { description: Deleted }
+  /transactions:
+    get:
+      summary: List transactions, newest first (text search runs on decrypted labels)
+      parameters:
+        - { name: account, in: query, schema: { type: string, format: uuid } }
+        - { name: category, in: query, description: Includes subcategories, schema: { type: string, format: uuid } }
+        - { name: uncategorized, in: query, schema: { type: boolean } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 500 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: A page
+          content: { application/json: { schema: { $ref: '#/components/schemas/TransactionPage' } } }
+  /transactions/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      summary: One transaction
+      responses:
+        '200':
+          description: Transaction
+          content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } }
+    patch:
+      summary: Set the category (a correction) and/or the note
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TransactionUpdate' } } }
+      responses:
+        '200':
+          description: Updated
+          content: { application/json: { schema: { $ref: '#/components/schemas/Transaction' } } }
+  /rules:
+    get:
+      summary: Categorization rules
+      responses:
+        '200':
+          description: Rules
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Rule' } } } }
+    post:
+      summary: Create a rule (recategorization runs in the background)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RuleInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Id' }
+  /rules/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      summary: Update a rule
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RuleInput' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Id' }
+    delete:
+      summary: Delete a rule
+      responses:
+        '204': { description: Deleted }
+  /rules/preview:
+    post:
+      summary: Transactions a rule would match
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RuleInput' } } }
+      responses:
+        '200':
+          description: Matches
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, items]
+                properties:
+                  total: { type: integer }
+                  items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
+  /stats/summary:
+    get:
+      summary: Month totals vs previous month and 6-month average, spending per top-level category
+      parameters: [{ name: month, in: query, schema: { type: string, example: '2026-10' } }]
+      responses:
+        '200':
+          description: Summary
+          content: { application/json: { schema: { $ref: '#/components/schemas/StatsSummary' } } }
+  /stats/categories:
+    get:
+      summary: Monthly spending and income per top-level category (default last 12 months)
+      parameters:
+        - { name: from, in: query, schema: { type: string } }
+        - { name: to, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Series
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/MonthAmount' } } } }
+  /stats/merchants:
+    get:
+      summary: Top merchants by spending
+      parameters:
+        - { name: from, in: query, schema: { type: string } }
+        - { name: to, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 50 } }
+      responses:
+        '200':
+          description: Merchants
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Merchant' } } } }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  requestBodies:
+    Credentials:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [email, password]
+            properties:
+              email: { type: string }
+              password: { type: string, minLength: 10 }
+              client: { type: string, enum: [web, mobile] }
+    Name:
+      required: true
+      content:
+        application/json:
+          schema: { type: object, required: [name], properties: { name: { type: string } } }
+  responses:
+    Tokens:
+      description: Session tokens
+      content: { application/json: { schema: { $ref: '#/components/schemas/Tokens' } } }
+    Id:
+      description: Saved
+      content:
+        application/json:
+          schema: { type: object, required: [id], properties: { id: { type: string, format: uuid } } }
+    Error:
+      description: Error
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, enum: [bad_request, validation, unauthorized, not_found, conflict, rate_limited, internal] }
+            message: { type: string }
+            fields: { type: object, additionalProperties: { type: string } }
+    Tokens:
+      type: object
+      required: [accessToken, accessExpiresAt]
+      properties:
+        accessToken: { type: string }
+        accessExpiresAt: { type: string, format: date-time }
+        refreshToken: { type: string, description: Mobile only }
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken: { type: string }
+        client: { type: string, enum: [web, mobile] }
+    User:
+      type: object
+      required: [id, email, locale, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        locale: { type: string }
+        createdAt: { type: string, format: date-time }
+    Bank:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+    AccountKind: { type: string, enum: [current, card, savings, other] }
+    AccountInput:
+      type: object
+      required: [bankId, name, kind]
+      properties:
+        bankId: { type: string, format: uuid }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/AccountKind' }
+        anchorBalanceCents: { type: integer, description: Balance at the end of anchorDate }
+        anchorDate: { type: string, format: date }
+    Account:
+      type: object
+      required: [id, bankId, name, kind, currency, anchorBalanceCents, anchorDate, balanceCents]
+      properties:
+        id: { type: string, format: uuid }
+        bankId: { type: string, format: uuid }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/AccountKind' }
+        currency: { type: string }
+        anchorBalanceCents: { type: integer }
+        anchorDate: { type: string, format: date }
+        balanceCents: { type: integer }
+    CategoryKind: { type: string, enum: [expense, income, transfer] }
+    Category:
+      type: object
+      required: [id, parentId, key, name, kind, icon, color, excludedFromStats]
+      properties:
+        id: { type: string, format: uuid }
+        parentId: { type: [string, 'null'], format: uuid }
+        key: { type: [string, 'null'], description: Stable key of a default category }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/CategoryKind' }
+        icon: { type: string }
+        color: { type: string }
+        excludedFromStats: { type: boolean }
+    CategoryInput:
+      type: object
+      required: [name, kind, color]
+      properties:
+        parentId: { type: [string, 'null'], format: uuid }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/CategoryKind' }
+        icon: { type: string }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        excludedFromStats: { type: boolean }
+    Mapping:
+      type: object
+      required: [headerRow, dateCol, dateFormat, amountMode, amountCol, debitCol, creditCol, decimalSep, labelCols]
+      properties:
+        headerRow: { type: integer, description: -1 when there is no header }
+        dateCol: { type: integer }
+        dateFormat: { type: string, description: 'Go layout from dateFormats, or "excel"' }
+        amountMode: { type: string, enum: [single, debit_credit] }
+        amountCol: { type: integer }
+        debitCol: { type: integer }
+        creditCol: { type: integer }
+        decimalSep: { type: string, enum: [',', '.'] }
+        labelCols: { type: array, items: { type: integer } }
+    MappingRequest:
+      type: object
+      required: [accountId, mapping]
+      properties:
+        accountId: { type: string, format: uuid }
+        mapping: { $ref: '#/components/schemas/Mapping' }
+    ImportPreview:
+      type: object
+      required: [id, fileName, kind, columnCount, rowCount, rows, mapping, dateFormats, profileId, accountId]
+      properties:
+        id: { type: string, format: uuid }
+        fileName: { type: string }
+        kind: { type: string, enum: [csv, xlsx] }
+        encoding: { type: string }
+        delimiter: { type: string }
+        columnCount: { type: integer }
+        rowCount: { type: integer }
+        rows: { type: array, items: { type: array, items: { type: string } } }
+        mapping: { $ref: '#/components/schemas/Mapping' }
+        dateFormats: { type: array, items: { type: string } }
+        profileId: { type: [string, 'null'], format: uuid }
+        accountId: { type: [string, 'null'], format: uuid }
+    ImportSummary:
+      type: object
+      required: [id, status, fileName, accountId, profileId, rowsTotal, rowsNew, rowsDuplicate, rowsReview, rowsInvalid,
+        periodStart, periodEnd, createdAt, committedAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [uploaded, mapped, committed, cancelled] }
+        fileName: { type: string }
+        accountId: { type: [string, 'null'], format: uuid }
+        profileId: { type: [string, 'null'], format: uuid }
+        rowsTotal: { type: integer }
+        rowsNew: { type: integer }
+        rowsDuplicate: { type: integer }
+        rowsReview: { type: integer }
+        rowsInvalid: { type: integer }
+        periodStart: { type: [string, 'null'], format: date }
+        periodEnd: { type: [string, 'null'], format: date }
+        createdAt: { type: string, format: date-time }
+        committedAt: { type: [string, 'null'], format: date-time }
+        rows: { type: array, items: { $ref: '#/components/schemas/StagedRow' } }
+    StagedRow:
+      type: object
+      required: [index, amountCents, label, status]
+      properties:
+        index: { type: integer }
+        date: { type: string, format: date }
+        amountCents: { type: integer }
+        label: { type: string }
+        status: { type: string, enum: [new, duplicate, review, invalid] }
+        error: { type: string }
+        match:
+          type: object
+          required: [id, date, amountCents, label]
+          properties:
+            id: { type: string, format: uuid }
+            date: { type: string, format: date }
+            amountCents: { type: integer }
+            label: { type: string }
+    Profile:
+      type: object
+      required: [id, name, lastAccountId]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        lastAccountId: { type: [string, 'null'], format: uuid }
+    Transaction:
+      type: object
+      required: [id, accountId, date, amountCents, label, merchant, categoryId, categorySource, confidence, transferId,
+        recurringId]
+      properties:
+        id: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        date: { type: string, format: date }
+        amountCents: { type: integer }
+        label: { type: string }
+        merchant: { type: string }
+        categoryId: { type: [string, 'null'], format: uuid }
+        categorySource: { type: [string, 'null'], enum: [rule, builtin, model, user, transfer, null] }
+        confidence: { type: [number, 'null'] }
+        note: { type: string }
+        transferId: { type: [string, 'null'], format: uuid }
+        recurringId: { type: [string, 'null'], format: uuid }
+    TransactionPage:
+      type: object
+      required: [items, next]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
+        next: { type: string, description: Cursor of the next page, empty on the last one }
+    TransactionUpdate:
+      type: object
+      properties:
+        categoryId: { type: string, description: 'Category id, or "" for uncategorized' }
+        note: { type: string }
+        applyToMerchant: { type: boolean, description: Also create a rule for this merchant }
+    RuleInput:
+      type: object
+      required: [pattern, match, categoryId]
+      properties:
+        pattern: { type: string }
+        match: { type: string, enum: [merchant, contains] }
+        sign: { type: string, enum: [any, in, out] }
+        categoryId: { type: string, format: uuid }
+        priority: { type: integer }
+    Rule:
+      allOf:
+        - { $ref: '#/components/schemas/RuleInput' }
+        - type: object
+          required: [id, origin, sign, priority]
+          properties:
+            id: { type: string, format: uuid }
+            origin: { type: string, enum: [manual, correction] }
+    Totals:
+      type: object
+      required: [incomeCents, spendingCents]
+      properties:
+        incomeCents: { type: integer }
+        spendingCents: { type: integer }
+    StatsSummary:
+      type: object
+      required: [month, totals, previous, average6, savingsRate, byCategory, uncategorizedCount]
+      properties:
+        month: { type: string }
+        totals: { $ref: '#/components/schemas/Totals' }
+        previous: { $ref: '#/components/schemas/Totals' }
+        average6: { $ref: '#/components/schemas/Totals' }
+        savingsRate: { type: [number, 'null'] }
+        byCategory:
+          type: array
+          items:
+            type: object
+            required: [categoryId, spendingCents, count]
+            properties:
+              categoryId: { type: [string, 'null'], format: uuid }
+              spendingCents: { type: integer }
+              count: { type: integer }
+        uncategorizedCount: { type: integer }
+    MonthAmount:
+      type: object
+      required: [month, categoryId, spendingCents, incomeCents]
+      properties:
+        month: { type: string }
+        categoryId: { type: [string, 'null'], format: uuid }
+        spendingCents: { type: integer }
+        incomeCents: { type: integer }
+    Merchant:
+      type: object
+      required: [name, spendingCents, count]
+      properties:
+        name: { type: string }
+        spendingCents: { type: integer }
+        count: { type: integer }

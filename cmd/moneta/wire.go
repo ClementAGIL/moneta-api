@@ -15,6 +15,7 @@ import (
 	"github.com/ClementAGIL/moneta-api/internal/httpapi"
 	"github.com/ClementAGIL/moneta-api/internal/imports"
 	"github.com/ClementAGIL/moneta-api/internal/jobs"
+	"github.com/ClementAGIL/moneta-api/internal/stats"
 	"github.com/ClementAGIL/moneta-api/internal/transactions"
 	"github.com/ClementAGIL/moneta-api/internal/vault"
 )
@@ -38,6 +39,7 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 		Imports:      imports.NewService(pool, authSvc, afterImport),
 		Transactions: transactions.NewService(pool, authSvc),
 		Categorize:   categorizer,
+		Stats:        stats.NewService(pool, authSvc),
 		WebDir:       cfg.WebDir,
 		CookieSecure: cfg.CookieSecure,
 	}

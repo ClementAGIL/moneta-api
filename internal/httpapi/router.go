@@ -10,6 +10,7 @@ import (
 	"github.com/ClementAGIL/moneta-api/internal/auth"
 	"github.com/ClementAGIL/moneta-api/internal/categorize"
 	"github.com/ClementAGIL/moneta-api/internal/imports"
+	"github.com/ClementAGIL/moneta-api/internal/stats"
 	"github.com/ClementAGIL/moneta-api/internal/transactions"
 )
 
@@ -21,6 +22,7 @@ type Deps struct {
 	Imports      *imports.Service
 	Transactions *transactions.Service
 	Categorize   *categorize.Service
+	Stats        *stats.Service
 	WebDir       string // non-empty: also serve the built web app on /
 	CookieSecure bool   // refresh cookie only over HTTPS
 }
@@ -42,6 +44,7 @@ func NewRouter(deps Deps) http.Handler {
 	s.resourceRoutes(mux)
 	s.importRoutes(mux)
 	s.transactionRoutes(mux)
+	s.statsRoutes(mux)
 	mux.HandleFunc("/api/", apiNotFound)
 	if deps.WebDir != "" {
 		mux.Handle("/", webApp(deps.WebDir))

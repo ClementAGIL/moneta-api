@@ -62,8 +62,10 @@ internal/categorize/      engine.go: user rules (priority, corrections first) �
                           skips user/transfer); rules.go: encrypted rules CRUD, Preview, CorrectMerchant (upsert)
 internal/transactions/    List (filters, keyset cursor, text search in Go on decrypted labels), Get, Edit (category
                           → source user, optional merchant rule; note)
+internal/stats/           Summary (month vs previous + 6-month average, savings rate, by top-level category),
+                          Categories (monthly series), Merchants (top by spending); transfers/excluded ignored
 internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go;
-                          transactions_handlers.go (transactions + rules); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+                          transactions_handlers.go (transactions + rules); stats_handlers.go; respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
                           body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
@@ -115,4 +117,5 @@ transaction).
   identical same-day rows, re-labelled payment → review, Windows-1252 + title lines + debit/credit, undo).
 - ✅ M5: categorization (rules → built-in keywords), categorized at commit, rule changes queue `categorize.user`
   jobs, corrections with "apply to merchant", transactions list/search/pagination. Tested on testdata.
-- Next: M6 (stats endpoints → MVP API complete).
+- ✅ M6: stats endpoints; `docs/openapi.yaml` covers every endpoint so far. **MVP API complete.**
+- Next: web MVP (W1–W5), then M7 (transfers, recurring).
