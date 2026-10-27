@@ -78,7 +78,12 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 		WebDir:       cfg.WebDir,
 		CookieSecure: cfg.CookieSecure,
 	}
-	background := func(ctx context.Context) {
+	return deps, svc.background(pool, logger)
+}
+
+// background starts the job worker and the periodic tasks.
+func (svc services) background(pool *pgxpool.Pool, logger *slog.Logger) func(context.Context) {
+	return func(ctx context.Context) {
 		go svc.worker(pool, logger).Run(ctx)
 		go jobs.Every(ctx, logger, "imports.expire", time.Hour, func(ctx context.Context) error {
 			return imports.Expire(ctx, pool)
@@ -88,7 +93,6 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 			return queueEveryone(ctx, pool)
 		})
 	}
-	return deps, background
 }
 
 func queueEveryone(ctx context.Context, pool *pgxpool.Pool) error {
