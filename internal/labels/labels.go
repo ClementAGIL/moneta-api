@@ -14,10 +14,15 @@ import (
 
 const maxMerchantWords = 3
 
+// Words after which a label only holds the payment reason or a reference.
+var cutWords = map[string]bool{"MOTIF": true, "REF": true, "REFERENCE": true, "LIB": true, "ECHEANCE": true,
+	"MANDAT": true, "ID": true}
+
 // Prefixes French banks put before the useful part of a label, longest first so "PRLV SEPA" wins over "PRLV".
 var prefixes = []string{
 	"PAIEMENT PAR CARTE", "PAIEMENT CB", "ACHAT CB", "FACTURE CARTE", "CARTE BANCAIRE", "PRLV SEPA", "PRELEVEMENT",
-	"VIR SEPA RECU", "VIR SEPA EMIS", "VIR SEPA", "VIREMENT SEPA", "VIREMENT", "VIR INST", "VIR",
+	"VIREMENT EN VOTRE FAVEUR", "VIREMENT DE", "VIR SEPA RECU", "VIR SEPA EMIS", "VIR SEPA", "VIREMENT SEPA",
+	"VIREMENT", "VIR INST", "VIR",
 	"RETRAIT DAB", "RETRAIT", "PAIEMENT", "CARTE", "PRLV", "CB", "DU",
 }
 
@@ -32,7 +37,8 @@ var (
 // Words dropped when looking for the merchant: legal forms, countries, glue words, common city names.
 var stopWords = map[string]bool{
 	"SAS": true, "SARL": true, "SA": true, "EURL": true, "SASU": true, "FR": true, "FRA": true, "FRANCE": true,
-	"EUR": true, "DE": true, "LA": true, "LE": true, "LES": true, "DES": true, "ET": true, "WWW": true, "COM": true,
+	"EUR": true, "CB": true, "MME": true, "MR": true, "M": true, "MLLE": true, "DE": true, "LA": true, "LE": true,
+	"LES": true, "DES": true, "ET": true, "WWW": true, "COM": true,
 	"PARIS": true, "LYON": true, "MARSEILLE": true, "TOULOUSE": true, "NANTES": true, "LILLE": true, "BORDEAUX": true,
 	"NICE": true, "RENNES": true, "STRASBOURG": true, "MONTPELLIER": true, "GRENOBLE": true, "CEDEX": true,
 }
@@ -54,6 +60,9 @@ func Merchant(normalized string) string {
 	s := trimPrefixes(normalized)
 	var words []string
 	for _, w := range strings.Fields(s) {
+		if cutWords[w] {
+			break
+		}
 		if stopWords[w] || len(w) < 2 && !unicode.IsLetter(rune(w[0])) {
 			continue
 		}

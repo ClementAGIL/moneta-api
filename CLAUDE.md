@@ -33,6 +33,7 @@ scripts/create-db.sql` | One-time: create the `moneta` role + database |
 
 ```
 cmd/moneta/main.go        entry point: config → DB open + migrate → job worker + HTTP server, graceful shutdown
+cmd/moneta/wire.go        builds services, hooks (import commit → categorize) and job handlers
 internal/config/          .env (if present, real env wins) + env → Config (see .env.example)
 internal/db/              pgx pool (Open), goose migrations from the embedded migrations/ (Migrate)
 internal/jobs/            queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
@@ -56,11 +57,17 @@ internal/dedup/           Classify: exact duplicates per occurrence, near-matche
 internal/imports/         Service: Upload (grid encrypted, profile by fingerprint), SetMapping (stage.go: parse, keys,
                           classify → import_rows; profile upsert), Commit (→ transactions, merchant + blind index),
                           Delete (cancel or undo), Get/List (summary.go)
-internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go; respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+internal/categorize/      engine.go: user rules (priority, corrections first) → builtin.go French merchant keywords →
+                          model (Predictor, later) → uncategorized; service.go: Recategorize (all or one import,
+                          skips user/transfer); rules.go: encrypted rules CRUD, Preview, CorrectMerchant (upsert)
+internal/transactions/    List (filters, keyset cursor, text search in Go on decrypted labels), Get, Edit (category
+                          → source user, optional merchant rule; note)
+internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go;
+                          transactions_handlers.go (transactions + rules); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
                           body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
-migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions), embedded by embed.go
+migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
@@ -106,4 +113,6 @@ transaction).
 - ✅ M3: banks/accounts/categories CRUD, default categories seeded in the sign-up transaction. Smoke-tested.
 - ✅ M4: import pipeline, tested end to end with `testdata/` (synthetic exports in two layouts: overlap duplicates,
   identical same-day rows, re-labelled payment → review, Windows-1252 + title lines + debit/credit, undo).
-- Next: M5 (rules + built-in merchant categorization, corrections, transactions list/search).
+- ✅ M5: categorization (rules → built-in keywords), categorized at commit, rule changes queue `categorize.user`
+  jobs, corrections with "apply to merchant", transactions list/search/pagination. Tested on testdata.
+- Next: M6 (stats endpoints → MVP API complete).
