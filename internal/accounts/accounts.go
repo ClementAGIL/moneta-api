@@ -17,7 +17,8 @@ const (
 )
 
 // balanceSQL sums the account's movements after its anchor date (account aliased "a").
-const balanceSQL = `0`
+const balanceSQL = `coalesce((SELECT sum(t.amount_cents) FROM transactions t
+	WHERE t.account_id = a.id AND t.booked_on > a.anchor_date), 0)`
 
 var kinds = map[string]bool{"current": true, "card": true, "savings": true, "other": true}
 

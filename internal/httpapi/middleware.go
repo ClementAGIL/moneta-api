@@ -3,9 +3,11 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -67,6 +69,18 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// recoverPanics turns a handler panic into a logged 500 instead of a dropped connection.
+func (s *server) recoverPanics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if v := recover(); v != nil {
+				s.writeError(w, r, fmt.Errorf("panic: %v\n%s", v, debug.Stack()))
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func limitBody(next http.Handler) http.Handler {

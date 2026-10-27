@@ -42,8 +42,12 @@ checked out next to this repo. Handy to try the project without installing Go or
 ## API
 
 JSON under `/api/v1`. Done so far: `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`,
-`GET /me`, CRUD on `/banks`, `/accounts`, `/categories`; probes `GET /api/health` and `/api/ready`. Errors look like
+`GET /me`, CRUD on `/banks`, `/accounts`, `/categories`; imports (`POST /imports` multipart
+`file` → preview + suggested mapping, `PUT /imports/{id}/mapping`, `POST /imports/{id}/commit`, `DELETE` to cancel or
+undo, `GET /imports`), `/import-profiles`; probes `GET /api/health` and `/api/ready`. Errors look like
 `{"error": {"code": "validation", "message": "...", "fields": {...}}}`.
+
+Try it with the synthetic exports in `testdata/`.
 
 ## Security model
 

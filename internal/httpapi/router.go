@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ClementAGIL/moneta-api/internal/auth"
+	"github.com/ClementAGIL/moneta-api/internal/imports"
 )
 
 // Deps are the shared services handlers need.
@@ -15,6 +16,7 @@ type Deps struct {
 	Logger       *slog.Logger
 	DB           *pgxpool.Pool
 	Auth         *auth.Service
+	Imports      *imports.Service
 	WebDir       string // non-empty: also serve the built web app on /
 	CookieSecure bool   // refresh cookie only over HTTPS
 }
@@ -34,11 +36,12 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("GET /api/ready", ready(deps.DB))
 	s.authRoutes(mux)
 	s.resourceRoutes(mux)
+	s.importRoutes(mux)
 	mux.HandleFunc("/api/", apiNotFound)
 	if deps.WebDir != "" {
 		mux.Handle("/", webApp(deps.WebDir))
 	}
-	return logRequests(deps.Logger, limitBody(mux))
+	return logRequests(deps.Logger, s.recoverPanics(limitBody(mux)))
 }
 
 func (s *server) authRoutes(mux *http.ServeMux) {

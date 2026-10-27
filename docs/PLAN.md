@@ -319,7 +319,7 @@ Free-text search `q` runs in Go over the user's decrypted labels in the date ran
 | M1  | ✅ DB: pgx pool, goose embedded migrations, `.env` loading, `/api/ready`, job queue + worker   |              |
 | M2  | ✅ Auth: users, argon2id, JWT, refresh rotation, auth middleware, rate limits, crypto (KEK/DEK)  | W1           |
 | M3  | ✅ Banks, accounts, default categories                                                           | W2           |
-| M4  | Import: detect, grid, profiles, mapping, parse, dedup, review, commit, undo                   | W3           |
+| M4  | ✅ Import: detect, grid, profiles, mapping, parse, dedup, review, commit, undo                   | W3           |
 | M5  | Labels/merchants, built-in + user rules, corrections, transactions list/search                | W4           |
 | M6  | Stats endpoints → **MVP complete**                                                            | W5           |
 | M7  | Transfers + recurring + subscriptions                                                         | W6           |

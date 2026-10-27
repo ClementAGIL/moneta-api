@@ -25,7 +25,8 @@ No unit tests by default (user's rule); verify with `go vet`, `golangci-lint`, `
 | `go run ./cmd/moneta`                | Run the API (reads `.env` values from the env) |
 | `go build ./... && go vet ./...`     | Compile and vet (run before calling a change done) |
 | `gofmt -l .`                         | Must print nothing                            |
-| `psql -U postgres -v pw=… -f scripts/create-db.sql` | One-time: create the `moneta` role + database |
+| `psql -U postgres -v pw=… -f testdata/                 synthetic bank exports for manual import tests (never real data)
+scripts/create-db.sql` | One-time: create the `moneta` role + database |
 | `docker compose up -d --build`       | Optional full stack in containers (not usable on the dev PC) |
 
 ## Architecture
@@ -45,11 +46,21 @@ internal/apperr/          domain errors (NotFound, Invalid(field), Conflict) map
 internal/db/querier.go    Querier (pool or tx), IsUnique/IsForeignKey, NotFoundIfNoRows, Affected, CleanName
 internal/accounts/        banks + accounts (anchor balance/date; balance = anchor + movements after it)
 internal/categories/      per-user two-level tree, defaults.go seeded at sign-up (stable keys), CRUD
-internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+internal/money/           Parse bank amounts → int64 cents ("," or "." decimals, thousands, (x), trailing -, Excel float noise)
+internal/labels/          Normalize (uppercase, no accents/cards/dates/refs) and Merchant (first meaningful words)
+internal/importer/        pure: grid.go ReadGrid (xlsx raw values / csv: UTF-8 or Windows-1252, delimiter sniffing),
+                          detect.go Detect (header row, column roles by names then content, date format, decimal sep)
+                          + Fingerprint, mapping.go Mapping.Validate/Parse, values.go dates (layouts + Excel serials)
+internal/dedup/           Classify: exact duplicates per occurrence, near-matches (same amount, ±3 days, inside the
+                          file period, not reproduced exactly by the file) → review
+internal/imports/         Service: Upload (grid encrypted, profile by fingerprint), SetMapping (stage.go: parse, keys,
+                          classify → import_rows; profile upsert), Commit (→ transactions, merchant + blind index),
+                          Delete (cancel or undo), Get/List (summary.go)
+internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go; respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
-                          body limit, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
+                          body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
-migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories), embedded by embed.go
+migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
@@ -93,4 +104,6 @@ transaction).
 - ✅ M2: register/login/refresh/logout/me, argon2id, JWT + rotating refresh tokens (cookie for web, body for
   mobile with `client: "mobile"`), stolen-token family revocation, rate limits, vault (KEK/DEK). Smoke-tested.
 - ✅ M3: banks/accounts/categories CRUD, default categories seeded in the sign-up transaction. Smoke-tested.
-- Next: M4 (import pipeline).
+- ✅ M4: import pipeline, tested end to end with `testdata/` (synthetic exports in two layouts: overlap duplicates,
+  identical same-day rows, re-labelled payment → review, Windows-1252 + title lines + debit/credit, undo).
+- Next: M5 (rules + built-in merchant categorization, corrections, transactions list/search).
