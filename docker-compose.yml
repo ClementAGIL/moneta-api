@@ -1,0 +1,40 @@
+# Home-server stack: PostgreSQL, the API, and the web app (built from ../moneta-app) served by Caddy.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: moneta
+      POSTGRES_USER: moneta
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U moneta']
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://moneta:${POSTGRES_PASSWORD}@db:5432/moneta?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../moneta-app
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '8000:80'
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
