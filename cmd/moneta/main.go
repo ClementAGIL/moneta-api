@@ -20,6 +20,9 @@ import (
 
 const (
 	readHeaderTimeout = 5 * time.Second
+	readTimeout       = 30 * time.Second // uploads are at most 5 MB
+	writeTimeout      = 60 * time.Second // the data export can take a moment
+	idleTimeout       = 2 * time.Minute
 	shutdownTimeout   = 10 * time.Second
 )
 
@@ -58,6 +61,9 @@ func run(logger *slog.Logger) error {
 		Addr:              cfg.Addr,
 		Handler:           httpapi.NewRouter(deps),
 		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 	return serve(ctx, srv, logger)
 }

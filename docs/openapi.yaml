@@ -59,6 +59,40 @@ paths:
         '200':
           description: The user
           content: { application/json: { schema: { $ref: '#/components/schemas/User' } } }
+    patch:
+      summary: Change locale and/or password (a new password signs out every other session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                locale: { type: string, enum: [fr, en] }
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 10 }
+      responses:
+        '200':
+          description: The user
+          content: { application/json: { schema: { $ref: '#/components/schemas/User' } } }
+        '422': { $ref: '#/components/responses/Error' }
+    delete:
+      summary: Delete the account and all its data (password required)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [password], properties: { password: { type: string } } }
+      responses:
+        '204': { description: Deleted }
+        '422': { $ref: '#/components/responses/Error' }
+  /me/export:
+    get:
+      summary: Download all my data (ZIP with data.json and transactions.csv, decrypted)
+      responses:
+        '200':
+          description: ZIP archive
+          content: { application/zip: { schema: { type: string, format: binary } } }
   /banks:
     get:
       summary: List banks

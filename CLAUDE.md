@@ -46,7 +46,8 @@ internal/vault/           envelope encryption: KEK (env) wraps a per-user DEK; U
                           (HMAC blind index), keys derived with HKDF
 internal/auth/            argon2id (password.go), JWT HS256 15 min + opaque refresh tokens (tokens.go), Service:
                           Register/Login/Refresh (rotation, reuse revokes the family)/Logout/Verify (service.go),
-                          SQL (store.go), Me + Keys (user.go)
+                          SQL (store.go), Me + Keys (user.go), Update (locale, password → revoke sessions) + Delete
+                          (password, cascade = crypto-shred) (account.go); Verify also checks the user still exists
 internal/apperr/          domain errors (NotFound, Invalid(field), Conflict) mapped to 404/422/409 by httpapi
 internal/db/querier.go    Querier (pool or tx), IsUnique/IsForeignKey, NotFoundIfNoRows, Affected, CleanName
 internal/accounts/        banks + accounts (anchor balance/date; balance = anchor + movements after it)
@@ -68,6 +69,7 @@ internal/ml/               own Naive Bayes: features.go (words, word pairs, merc
                           naivebayes.go (Train/Add/Predict softmax/Explain, words first), evaluate.go (holdout =
                           newest 20 %, model vs rules on hand-categorized), service.go (Retrain, encrypted gob in
                           models, Predictor when active: ≥ 200 samples and ≥ 75 % accuracy; confidence ≥ 0.6)
+internal/export/           Write: ZIP (data.json with everything decrypted + transactions.csv) for GET /me/export
 internal/transactions/    List (filters, keyset cursor, text search in Go on decrypted labels), Get, Edit (category
                           → source user, optional merchant rule; note)
 internal/transfers/       Detect (one-to-one opposite amounts, different accounts, ±3 days → category "transfers"),
@@ -89,9 +91,9 @@ internal/forecast/        Month: balance (anchor + movements) + recurring items 
 internal/stats/           Summary (month vs previous + 6-month average, savings rate, by top-level category),
                           Categories (monthly series), Merchants (top by spending); transfers/excluded ignored
 internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go;
-                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); budgets_handlers.go (+ insights); model_handlers.go (+ explain, forecast); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); budgets_handlers.go (+ insights); model_handlers.go (+ explain, forecast); me_handlers.go (settings, export, delete); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
-                          body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
+                          body limit, panic recovery, security headers (CSP, nosniff, DENY), access log; ratelimit.go: token buckets per IP (login, register) and per user (uploads); auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
 migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules, 00006 recurring, 00007 budgets/insights + recurring.first_date, 00008 models), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
@@ -154,4 +156,7 @@ transaction).
   stateful transformer across goroutines (crash under concurrent import + job); job panics are now recovered.
 - ✅ W8 done in moneta-app.
 - ✅ M10: forecast endpoint + forecast_negative insight.
-- Next: W9 (forecast chart), then M11 (export, delete account, hardening).
+- ✅ W9 done in moneta-app.
+- ✅ M11: PATCH/DELETE /me, GET /me/export, security headers, server timeouts, upload rate limit, OpenAPI
+  complete. **API plan complete (M0–M11).**
+- Next: W10 (settings page), then the mobile app (A1–A6).

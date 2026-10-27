@@ -45,12 +45,13 @@ type server struct {
 	Deps
 	loginLimit    *limiter
 	registerLimit *limiter
+	importLimit   *limiter
 }
 
 // NewRouter returns the API handler with logging applied to every route.
 func NewRouter(deps Deps) http.Handler {
 	s := &server{Deps: deps, loginLimit: newLimiter(loginPerMinute, loginBurst),
-		registerLimit: newLimiter(registerPerMinute, registerBurst)}
+		registerLimit: newLimiter(registerPerMinute, registerBurst), importLimit: newLimiter(importPerMinute, importBurst)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", health)
 	mux.Handle("GET /api/ready", ready(deps.DB))
@@ -62,11 +63,12 @@ func NewRouter(deps Deps) http.Handler {
 	s.recurringRoutes(mux)
 	s.budgetRoutes(mux)
 	s.modelRoutes(mux)
+	s.meRoutes(mux)
 	mux.HandleFunc("/api/", apiNotFound)
 	if deps.WebDir != "" {
 		mux.Handle("/", webApp(deps.WebDir))
 	}
-	return logRequests(deps.Logger, s.recoverPanics(limitBody(mux)))
+	return logRequests(deps.Logger, securityHeaders(s.recoverPanics(limitBody(mux))))
 }
 
 func (s *server) authRoutes(mux *http.ServeMux) {

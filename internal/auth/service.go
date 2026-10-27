@@ -28,6 +28,8 @@ var (
 	ErrWeakPassword       = fmt.Errorf("password must be %d to %d characters", minPasswordLen, maxPasswordLen)
 	ErrEmailTaken         = errors.New("email already registered")
 	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrWrongPassword      = errors.New("wrong password")
+	ErrInvalidLocale      = errors.New("locale must be fr or en")
 )
 
 // dummyHash is checked when the email is unknown, so both cases take the same time.
@@ -108,9 +110,21 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 	return revokeByToken(ctx, s.db, hashToken(token))
 }
 
-// Verify returns the user id of a valid access token.
-func (s *Service) Verify(token string) (uuid.UUID, error) {
-	return parseAccess(s.secret, token)
+// Verify returns the user id of a valid access token whose user still exists (a deleted account's tokens stop
+// working at once, not when they expire).
+func (s *Service) Verify(ctx context.Context, token string) (uuid.UUID, error) {
+	id, err := parseAccess(s.secret, token)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	var exists bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = $1)`, id).Scan(&exists); err != nil {
+		return uuid.Nil, err
+	}
+	if !exists {
+		return uuid.Nil, ErrInvalidToken
+	}
+	return id, nil
 }
 
 func (s *Service) issue(ctx context.Context, userID, familyID uuid.UUID, userAgent string) (Tokens, error) {

@@ -3,6 +3,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/ClementAGIL/moneta-api/internal/auth"
 )
 
 const maxBodyBytes = 6 << 20 // imports are up to 5 MB, plus multipart overhead
@@ -38,9 +41,12 @@ func (s *server) authed(h handlerFunc) http.Handler {
 		if !ok {
 			return errUnauthorized("missing access token")
 		}
-		id, err := s.Auth.Verify(token)
-		if err != nil {
+		id, err := s.Auth.Verify(r.Context(), token)
+		if errors.Is(err, auth.ErrInvalidToken) {
 			return errUnauthorized("invalid or expired access token")
+		}
+		if err != nil {
+			return err
 		}
 		return h(w, r.WithContext(context.WithValue(r.Context(), userKey, id)))
 	})
@@ -69,6 +75,22 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// contentSecurity keeps the web app to its own origin (inline styles are allowed: charts and React style props).
+const contentSecurity = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+	"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+// securityHeaders adds the usual browser protections to every response.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", contentSecurity)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // recoverPanics turns a handler panic into a logged 500 instead of a dropped connection.

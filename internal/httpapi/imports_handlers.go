@@ -37,6 +37,9 @@ func (s *server) importRoutes(mux *http.ServeMux) {
 
 // uploadImport reads the "file" multipart field fully in memory; nothing touches the disk.
 func (s *server) uploadImport(w http.ResponseWriter, r *http.Request) error {
+	if !s.importLimit.allow(userID(r).String()) {
+		return errTooMany
+	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		return errBadRequest(`send the bank file as multipart field "file"`)

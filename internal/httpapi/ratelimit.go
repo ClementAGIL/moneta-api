@@ -11,6 +11,8 @@ const (
 	loginBurst        = 10.0
 	registerPerMinute = 0.1 // one every 10 minutes
 	registerBurst     = 3.0
+	importPerMinute   = 0.5  // 30 uploads an hour per user…
+	importBurst       = 20.0 // …after a first batch of 20
 	idleBucketTTL     = time.Hour
 )
 

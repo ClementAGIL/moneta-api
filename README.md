@@ -6,9 +6,9 @@ spending by category, subscriptions, budgets, end-of-month forecast and advice t
 
 Clients: [moneta-app](../moneta-app), a monorepo with the React web app and the Expo (React Native) mobile app.
 
-> Status: early scaffold. See [docs/PLAN.md](docs/PLAN.md) for the design and roadmap.
+> Status: API complete (milestones M0–M11 of [docs/PLAN.md](docs/PLAN.md)).
 
-## Highlights (planned)
+## Highlights
 
 - Import any bank's CSV/XLSX through a column-mapping wizard; the format is remembered.
 - Duplicate detection across overlapping exports (exact + near matches to review).
@@ -45,7 +45,7 @@ JSON under `/api/v1`. Done so far: `POST /auth/register`, `/auth/login`, `/auth/
 `GET /me`, CRUD on `/banks`, `/accounts`, `/categories`; imports (`POST /imports` multipart
 `file` → preview + suggested mapping, `PUT /imports/{id}/mapping`, `POST /imports/{id}/commit`, `DELETE` to cancel or
 undo, `GET /imports`), `/import-profiles`; `GET /transactions` (filters, `q` search, cursor) and `PATCH /transactions/{id}`; `/rules` CRUD
-and `POST /rules/preview`; `/stats/summary`, `/stats/categories`, `/stats/merchants`; `/recurring` and transfer pairing; `/budgets`, `/insights`; `/model` and `/transactions/{id}/explain`; `/forecast`. Full contract:
+and `POST /rules/preview`; `/stats/summary`, `/stats/categories`, `/stats/merchants`; `/recurring` and transfer pairing; `/budgets`, `/insights`; `/model` and `/transactions/{id}/explain`; `/forecast`; `PATCH`/`DELETE /me`, `GET /me/export`. Full contract:
 [docs/openapi.yaml](docs/openapi.yaml); probes `GET /api/health` and `/api/ready`. Errors look like
 `{"error": {"code": "validation", "message": "...", "fields": {...}}}`.
 
