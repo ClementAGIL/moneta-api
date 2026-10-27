@@ -300,6 +300,43 @@ paths:
                 properties:
                   total: { type: integer }
                   items: { type: array, items: { $ref: '#/components/schemas/Transaction' } }
+  /recurring:
+    get:
+      summary: Recurring payments and income (active first, then by monthly cost)
+      responses:
+        '200':
+          description: Series
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Recurring' } } } }
+  /recurring/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      summary: Ignore a series, or say whether it is a subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ignored: { type: boolean }
+                subscription: { type: boolean }
+      responses:
+        '204': { description: Saved }
+  /transactions/{id}/transfer/{other}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: other, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Mark two opposite movements in two accounts as an internal transfer
+      responses:
+        '204': { description: Paired }
+        '422': { $ref: '#/components/responses/Error' }
+  /transactions/{id}/transfer:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    delete:
+      summary: Unpair a transfer (both sides are categorized again)
+      responses:
+        '204': { description: Unpaired }
   /stats/summary:
     get:
       summary: Month totals vs previous month and 6-month average, spending per top-level category
@@ -606,6 +643,26 @@ components:
         categoryId: { type: [string, 'null'], format: uuid }
         spendingCents: { type: integer }
         incomeCents: { type: integer }
+    Recurring:
+      type: object
+      required: [id, name, direction, cadence, amountCents, monthlyCents, previousAmountCents, priceChangedOn, occurrences,
+        lastDate, nextDate, categoryId, subscription, ignored, active]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        direction: { type: string, enum: [in, out] }
+        cadence: { type: string, enum: [weekly, monthly, quarterly, yearly] }
+        amountCents: { type: integer, description: Latest amount, signed }
+        monthlyCents: { type: integer, description: Monthly equivalent, signed }
+        previousAmountCents: { type: [integer, 'null'], description: Amount before the latest price change }
+        priceChangedOn: { type: [string, 'null'], format: date }
+        occurrences: { type: integer }
+        lastDate: { type: string, format: date }
+        nextDate: { type: string, format: date }
+        categoryId: { type: [string, 'null'], format: uuid }
+        subscription: { type: boolean }
+        ignored: { type: boolean }
+        active: { type: boolean, description: Not ignored and not overdue by more than half a period }
     Merchant:
       type: object
       required: [name, spendingCents, count]

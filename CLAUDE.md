@@ -26,6 +26,7 @@ No unit tests by default (user's rule); verify with `go vet`, `golangci-lint`, `
 | `go build ./... && go vet ./...`     | Compile and vet (run before calling a change done) |
 | `gofmt -l .`                         | Must print nothing                            |
 | `psql -U postgres -v pw=… -f testdata/                 synthetic bank exports for manual import tests (never real data)
+scripts/gen-testdata.mjs  regenerates testdata/demo-*.csv (6 months, subscriptions, price change, transfers)
 scripts/create-db.sql` | One-time: create the `moneta` role + database |
 | `docker compose up -d --build`       | Optional full stack in containers (not usable on the dev PC) |
 
@@ -33,7 +34,8 @@ scripts/create-db.sql` | One-time: create the `moneta` role + database |
 
 ```
 cmd/moneta/main.go        entry point: config → DB open + migrate → job worker + HTTP server, graceful shutdown
-cmd/moneta/wire.go        builds services, hooks (import commit → categorize) and job handlers
+cmd/moneta/wire.go        builds services, hooks (import commit → categorize, then queue analyze.user) and job
+                          handlers (categorize.user; analyze.user = transfers → recurring)
 internal/config/          .env (if present, real env wins) + env → Config (see .env.example)
 internal/db/              pgx pool (Open), goose migrations from the embedded migrations/ (Migrate)
 internal/jobs/            queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
@@ -62,14 +64,21 @@ internal/categorize/      engine.go: user rules (priority, corrections first) �
                           skips user/transfer); rules.go: encrypted rules CRUD, Preview, CorrectMerchant (upsert)
 internal/transactions/    List (filters, keyset cursor, text search in Go on decrypted labels), Get, Edit (category
                           → source user, optional merchant rule; note)
+internal/transfers/       Detect (one-to-one opposite amounts, different accounts, ±3 days → category "transfers"),
+                          Pair / Unpair (manual)
+internal/recurring/       detect.go (pure): cadence from intervals (weekly/monthly/quarterly/yearly, 70 % fit),
+                          stable amounts with at most one level change (price increase), next date, ended;
+                          service.go Refresh (upsert, keeps ignored/subscription_override, links transactions);
+                          list.go List/Set; subscription = subscription-type category, or stable small amount
+                          when uncategorized
 internal/stats/           Summary (month vs previous + 6-month average, savings rate, by top-level category),
                           Categories (monthly series), Merchants (top by spending); transfers/excluded ignored
 internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go;
-                          transactions_handlers.go (transactions + rules); stats_handlers.go; respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
                           body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
-migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules), embedded by embed.go
+migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules, 00006 recurring), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
@@ -118,4 +127,7 @@ transaction).
 - ✅ M5: categorization (rules → built-in keywords), categorized at commit, rule changes queue `categorize.user`
   jobs, corrections with "apply to merchant", transactions list/search/pagination. Tested on testdata.
 - ✅ M6: stats endpoints; `docs/openapi.yaml` covers every endpoint so far. **MVP API complete.**
-- Next: web MVP (W1–W5), then M7 (transfers, recurring).
+- ✅ Web MVP (W1–W5) done in moneta-app.
+- ✅ M7: transfers (auto + manual), recurring series and subscriptions with price changes, analyze.user job.
+  Tested with testdata/demo-*.csv.
+- Next: W6 (subscriptions page), then M8 (budgets, insights, scheduler).

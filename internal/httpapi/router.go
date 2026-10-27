@@ -2,16 +2,20 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ClementAGIL/moneta-api/internal/auth"
 	"github.com/ClementAGIL/moneta-api/internal/categorize"
 	"github.com/ClementAGIL/moneta-api/internal/imports"
+	"github.com/ClementAGIL/moneta-api/internal/recurring"
 	"github.com/ClementAGIL/moneta-api/internal/stats"
 	"github.com/ClementAGIL/moneta-api/internal/transactions"
+	"github.com/ClementAGIL/moneta-api/internal/transfers"
 )
 
 // Deps are the shared services handlers need.
@@ -23,6 +27,10 @@ type Deps struct {
 	Transactions *transactions.Service
 	Categorize   *categorize.Service
 	Stats        *stats.Service
+	Transfers    *transfers.Service
+	Recurring    *recurring.Service
+	// Analyze queues the background analysis (transfers, recurring, insights) of a user.
+	Analyze      func(ctx context.Context, userID uuid.UUID) error
 	WebDir       string // non-empty: also serve the built web app on /
 	CookieSecure bool   // refresh cookie only over HTTPS
 }
@@ -45,6 +53,7 @@ func NewRouter(deps Deps) http.Handler {
 	s.importRoutes(mux)
 	s.transactionRoutes(mux)
 	s.statsRoutes(mux)
+	s.recurringRoutes(mux)
 	mux.HandleFunc("/api/", apiNotFound)
 	if deps.WebDir != "" {
 		mux.Handle("/", webApp(deps.WebDir))
