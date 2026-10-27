@@ -57,4 +57,6 @@ categorize, ml, recurring, budgets, forecast, insights, jobs, export.
 ## Status
 
 - ✅ M0 scaffold: `GET /api/health`, Dockerfile, docker-compose (db + api + web), plan.
-- Next: M1 (database, migrations, job queue skeleton). Go and Docker are not installed on the dev PC yet.
+- Dev PC: Go 1.27 (`C:\Program Files\Go\bin`, may be missing from PATH in old shells), Docker Desktop (needs WSL 2).
+  `go build`, `go vet`, `gofmt` clean; `/api/health` answers when run locally. Docker stack not yet started.
+- Next: M1 (database, migrations, job queue skeleton).
