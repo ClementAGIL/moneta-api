@@ -15,6 +15,7 @@ import (
 	"github.com/ClementAGIL/moneta-api/internal/config"
 	"github.com/ClementAGIL/moneta-api/internal/httpapi"
 	"github.com/ClementAGIL/moneta-api/internal/imports"
+	"github.com/ClementAGIL/moneta-api/internal/insights"
 	"github.com/ClementAGIL/moneta-api/internal/jobs"
 	"github.com/ClementAGIL/moneta-api/internal/recurring"
 	"github.com/ClementAGIL/moneta-api/internal/stats"
@@ -31,15 +32,19 @@ type services struct {
 	categorizer *categorize.Service
 	transfers   *transfers.Service
 	recurring   *recurring.Service
+	insights    *insights.Service
 }
 
-func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Logger) (httpapi.Deps, *jobs.Worker) {
+// wire returns the HTTP dependencies and the function starting the background work (job worker, schedules).
+func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Logger) (httpapi.Deps,
+	func(context.Context)) {
 	authSvc := auth.NewService(pool, kek, cfg.JWTSecret, categories.Seed)
 	svc := services{
 		auth:        authSvc,
 		categorizer: categorize.NewService(pool, authSvc, nil),
 		transfers:   transfers.NewService(pool),
 		recurring:   recurring.NewService(pool, authSvc),
+		insights:    insights.NewService(pool),
 	}
 	queueAnalysis := func(ctx context.Context, userID uuid.UUID) error {
 		return jobs.Enqueue(ctx, pool, analyzeJob, &userID, struct{}{}, time.Time{})
@@ -61,11 +66,29 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 		Stats:        stats.NewService(pool, authSvc),
 		Transfers:    svc.transfers,
 		Recurring:    svc.recurring,
+		Insights:     svc.insights,
 		Analyze:      queueAnalysis,
 		WebDir:       cfg.WebDir,
 		CookieSecure: cfg.CookieSecure,
 	}
-	return deps, svc.worker(pool, logger)
+	background := func(ctx context.Context) {
+		go svc.worker(pool, logger).Run(ctx)
+		go jobs.Every(ctx, logger, "imports.expire", time.Hour, func(ctx context.Context) error {
+			return imports.Expire(ctx, pool)
+		})
+		// Insights depend on the current month, so every user is re-analyzed daily even without new imports.
+		go jobs.Every(ctx, logger, "analyze.daily", 24*time.Hour, func(ctx context.Context) error {
+			return queueEveryone(ctx, pool)
+		})
+	}
+	return deps, background
+}
+
+func queueEveryone(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `INSERT INTO jobs (id, kind, user_id) SELECT gen_random_uuid(), $1, u.id FROM users u
+		WHERE EXISTS (SELECT 1 FROM transactions t WHERE t.user_id = u.id)
+		  AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.user_id = u.id AND j.kind = $1 AND j.done_at IS NULL)`, analyzeJob)
+	return err
 }
 
 func (svc services) worker(pool *pgxpool.Pool, logger *slog.Logger) *jobs.Worker {
@@ -77,7 +100,19 @@ func (svc services) worker(pool *pgxpool.Pool, logger *slog.Logger) *jobs.Worker
 		if _, err := svc.transfers.Detect(ctx, *job.UserID); err != nil {
 			return err
 		}
-		return svc.recurring.Refresh(ctx, *job.UserID)
+		if err := svc.recurring.Refresh(ctx, *job.UserID); err != nil {
+			return err
+		}
+		month := thisMonth()
+		if err := svc.insights.Generate(ctx, *job.UserID, month.AddDate(0, -1, 0)); err != nil {
+			return err
+		}
+		return svc.insights.Generate(ctx, *job.UserID, month)
 	})
 	return worker
+}
+
+func thisMonth() time.Time {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 }

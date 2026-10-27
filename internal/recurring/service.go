@@ -136,17 +136,18 @@ func upsert(ctx context.Context, tx pgx.Tx, userID uuid.UUID, g group, s Series,
 		last.categoryID == nil && s.LooksLikeSubscription())
 	var id uuid.UUID
 	err := tx.QueryRow(ctx, `INSERT INTO recurring (id, user_id, merchant_key, display_enc, sign, cadence, amount_cents,
-		previous_amount_cents, price_changed_on, avg_cents, occurrences, last_date, next_date, category_id, subscription)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		previous_amount_cents, price_changed_on, avg_cents, occurrences, last_date, next_date, category_id, subscription,
+		first_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (user_id, merchant_key, sign) DO UPDATE SET display_enc = EXCLUDED.display_enc,
 		  cadence = EXCLUDED.cadence, amount_cents = EXCLUDED.amount_cents,
 		  previous_amount_cents = EXCLUDED.previous_amount_cents, price_changed_on = EXCLUDED.price_changed_on,
 		  avg_cents = EXCLUDED.avg_cents, occurrences = EXCLUDED.occurrences, last_date = EXCLUDED.last_date,
 		  next_date = EXCLUDED.next_date, category_id = EXCLUDED.category_id, subscription = EXCLUDED.subscription,
+		  first_date = EXCLUDED.first_date,
 		  updated_at = now()
 		RETURNING id`, uuid.Must(uuid.NewV7()), userID, []byte(g.key), last.merchantEnc, g.sign, s.Cadence, s.Amount,
 		s.PreviousAmount, s.PriceChangedOn, s.Average, s.Occurrences, s.LastDate, s.NextDate, last.categoryID,
-		subscription).Scan(&id)
+		subscription, g.txns[0].Date).Scan(&id)
 	if err != nil {
 		return id, err
 	}

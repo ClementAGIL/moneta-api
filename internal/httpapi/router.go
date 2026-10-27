@@ -12,6 +12,7 @@ import (
 	"github.com/ClementAGIL/moneta-api/internal/auth"
 	"github.com/ClementAGIL/moneta-api/internal/categorize"
 	"github.com/ClementAGIL/moneta-api/internal/imports"
+	"github.com/ClementAGIL/moneta-api/internal/insights"
 	"github.com/ClementAGIL/moneta-api/internal/recurring"
 	"github.com/ClementAGIL/moneta-api/internal/stats"
 	"github.com/ClementAGIL/moneta-api/internal/transactions"
@@ -29,6 +30,7 @@ type Deps struct {
 	Stats        *stats.Service
 	Transfers    *transfers.Service
 	Recurring    *recurring.Service
+	Insights     *insights.Service
 	// Analyze queues the background analysis (transfers, recurring, insights) of a user.
 	Analyze      func(ctx context.Context, userID uuid.UUID) error
 	WebDir       string // non-empty: also serve the built web app on /
@@ -54,6 +56,7 @@ func NewRouter(deps Deps) http.Handler {
 	s.transactionRoutes(mux)
 	s.statsRoutes(mux)
 	s.recurringRoutes(mux)
+	s.budgetRoutes(mux)
 	mux.HandleFunc("/api/", apiNotFound)
 	if deps.WebDir != "" {
 		mux.Handle("/", webApp(deps.WebDir))

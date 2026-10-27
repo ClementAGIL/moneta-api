@@ -337,6 +337,42 @@ paths:
       summary: Unpair a transfer (both sides are categorized again)
       responses:
         '204': { description: Unpaired }
+  /budgets:
+    get:
+      summary: Budgets with the month's spending (a category includes its subcategories)
+      parameters: [{ name: month, in: query, schema: { type: string, example: '2026-10' } }]
+      responses:
+        '200':
+          description: Budgets
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Budget' } } } }
+    put:
+      summary: Set a category's monthly budget (0 removes it)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [categoryId, amountCents]
+              properties:
+                categoryId: { type: string, format: uuid }
+                amountCents: { type: integer, minimum: 0 }
+      responses:
+        '204': { description: Saved }
+  /insights:
+    get:
+      summary: Advice for a month (default the current and previous month), most severe first
+      parameters: [{ name: month, in: query, schema: { type: string } }]
+      responses:
+        '200':
+          description: Insights
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Insight' } } } }
+  /insights/{id}/dismiss:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      summary: Hide an insight for good
+      responses:
+        '204': { description: Dismissed }
   /stats/summary:
     get:
       summary: Month totals vs previous month and 6-month average, spending per top-level category
@@ -663,6 +699,31 @@ components:
         subscription: { type: boolean }
         ignored: { type: boolean }
         active: { type: boolean, description: Not ignored and not overdue by more than half a period }
+    Budget:
+      type: object
+      required: [categoryId, amountCents, spentCents, ratio]
+      properties:
+        categoryId: { type: string, format: uuid }
+        amountCents: { type: integer }
+        spentCents: { type: integer }
+        ratio: { type: number }
+    Insight:
+      type: object
+      required: [id, kind, period, severity, params]
+      properties:
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [category_up, category_down, budget_warning, budget_exceeded, price_increase, new_subscription,
+            duplicate_subscriptions, large_expense, bank_fees, savings_up, savings_down, forecast_negative]
+        period: { type: string, description: YYYY-MM }
+        severity: { type: string, enum: [info, good, warn, alert] }
+        params:
+          type: object
+          description: >
+            Ids and amounts only (categoryId, recurringId, transactionId, spentCents, averageCents, budgetCents,
+            amountCents, previousCents, count, monthlyCents, rate, averageRate, savedCents, year, balanceCents, date)
+          additionalProperties: true
     Merchant:
       type: object
       required: [name, spendingCents, count]

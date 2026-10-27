@@ -323,7 +323,7 @@ Free-text search `q` runs in Go over the user's decrypted labels in the date ran
 | M5  | ✅ Labels/merchants, built-in + user rules, corrections, transactions list/search                | W4           |
 | M6  | ✅ Stats endpoints → **MVP complete**                                                            | W5           |
 | M7  | ✅ Transfers + recurring + subscriptions                                                         | W6           |
-| M8  | Budgets + insights + scheduler                                                                | W7           |
+| M8  | ✅ Budgets + insights + scheduler                                                                | W7           |
 | M9  | Classifier (Naive Bayes, holdout, explain, activation)                                        | W8           |
 | M10 | Forecast                                                                                      | W9           |
 | M11 | Export / delete account, OpenAPI complete, hardening (limits, timeouts, headers)              | W10          |

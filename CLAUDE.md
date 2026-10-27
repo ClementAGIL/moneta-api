@@ -35,10 +35,11 @@ scripts/create-db.sql` | One-time: create the `moneta` role + database |
 ```
 cmd/moneta/main.go        entry point: config → DB open + migrate → job worker + HTTP server, graceful shutdown
 cmd/moneta/wire.go        builds services, hooks (import commit → categorize, then queue analyze.user) and job
-                          handlers (categorize.user; analyze.user = transfers → recurring)
+                          handlers (categorize.user; analyze.user = transfers → recurring → insights for this and last
+                          month); schedules: imports.expire hourly, analyze.daily for every user with data
 internal/config/          .env (if present, real env wins) + env → Config (see .env.example)
 internal/db/              pgx pool (Open), goose migrations from the embedded migrations/ (Migrate)
-internal/jobs/            queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
+internal/jobs/            scheduler.go Every(interval); queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
                           handlers per kind, retry with exponential backoff (30 s × 2^n, max 6 h)
 internal/vault/           envelope encryption: KEK (env) wraps a per-user DEK; UserKeys.Seal/Open (AES-GCM) and Index
                           (HMAC blind index), keys derived with HKDF
@@ -71,14 +72,19 @@ internal/recurring/       detect.go (pure): cadence from intervals (weekly/month
                           service.go Refresh (upsert, keeps ignored/subscription_override, links transactions);
                           list.go List/Set; subscription = subscription-type category, or stable small amount
                           when uncategorized
+internal/budgets/         Set (0 removes) and Progress (month spending incl. subcategories)
+internal/insights/        insights.go Generate (run rules, upsert by kind/period/ref, drop stale, keep dismissed),
+                          List, Dismiss; rules.go + rules_more.go: one function per rule (category trend vs
+                          average of months with data, budget 80 %/100 %, price increase, new subscription,
+                          duplicate subscriptions, large expense, bank fees, savings rate); params = ids + amounts
 internal/stats/           Summary (month vs previous + 6-month average, savings rate, by top-level category),
                           Categories (monthly series), Merchants (top by spending); transfers/excluded ignored
 internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go;
-                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); budgets_handlers.go (+ insights); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
                           body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
-migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules, 00006 recurring), embedded by embed.go
+migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories, 00004 import_profiles/imports/import_rows/transactions, 00005 rules, 00006 recurring, 00007 budgets/insights + recurring.first_date), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
@@ -130,4 +136,5 @@ transaction).
 - ✅ Web MVP (W1–W5) done in moneta-app.
 - ✅ M7: transfers (auto + manual), recurring series and subscriptions with price changes, analyze.user job.
   Tested with testdata/demo-*.csv.
-- Next: W6 (subscriptions page), then M8 (budgets, insights, scheduler).
+- ✅ M8: budgets, insights (8 rules), scheduler (import expiry, daily analysis). Averages use only months with data.
+- Next: W7 (budgets + insights in the web app), then M9 (classifier).

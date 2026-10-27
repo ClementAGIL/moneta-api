@@ -40,7 +40,7 @@ type Summary struct {
 	Month         string           `json:"month"`
 	Totals        Totals           `json:"totals"`
 	Previous      Totals           `json:"previous"`
-	Average       Totals           `json:"average6"` // monthly average over the 6 months before
+	Average       Totals           `json:"average6"` // monthly average over the months with data in the 6 before
 	SavingsRate   *float64         `json:"savingsRate"`
 	ByCategory    []CategoryAmount `json:"byCategory"`
 	Uncategorized int              `json:"uncategorizedCount"`
@@ -86,7 +86,15 @@ func (s *Service) Summary(ctx context.Context, userID uuid.UUID, month time.Time
 	if err != nil {
 		return sum, err
 	}
-	sum.Average = Totals{Income: avg.Income / averageMonths, Spending: avg.Spending / averageMonths}
+	var months int64
+	err = s.db.QueryRow(ctx, `SELECT count(DISTINCT date_trunc('month', booked_on)) FROM transactions
+		WHERE user_id = $1 AND booked_on >= $2 AND booked_on < $3`, userID, month.AddDate(0, -averageMonths, 0), month).Scan(&months)
+	if err != nil {
+		return sum, err
+	}
+	if months > 0 {
+		sum.Average = Totals{Income: avg.Income / months, Spending: avg.Spending / months}
+	}
 	if sum.Totals.Income > 0 {
 		rate := float64(sum.Totals.Income-sum.Totals.Spending) / float64(sum.Totals.Income)
 		sum.SavingsRate = &rate

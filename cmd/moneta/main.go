@@ -52,8 +52,8 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	deps, worker := wire(pool, kek, cfg, logger)
-	go worker.Run(ctx)
+	deps, background := wire(pool, kek, cfg, logger)
+	background(ctx)
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           httpapi.NewRouter(deps),

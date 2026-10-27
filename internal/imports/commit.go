@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ClementAGIL/moneta-api/internal/apperr"
 	"github.com/ClementAGIL/moneta-api/internal/labels"
@@ -129,4 +130,15 @@ func insertTransactions(ctx context.Context, tx pgx.Tx, keys *vault.UserKeys, us
 				keys.Seal(merchant), keys.Index(merchant), t.key, t.occurrence}, nil
 		}))
 	return int(n), err
+}
+
+// Expire cancels imports left open for more than a day and drops their encrypted grid and staged rows.
+func Expire(ctx context.Context, db interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}) error {
+	_, err := db.Exec(ctx, `WITH expired AS (
+			UPDATE imports SET status = 'cancelled', grid_enc = NULL
+			WHERE status IN ('uploaded', 'mapped') AND created_at < now() - interval '24 hours' RETURNING id)
+		DELETE FROM import_rows WHERE import_id IN (SELECT id FROM expired)`)
+	return err
 }
