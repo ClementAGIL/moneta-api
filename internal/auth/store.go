@@ -74,3 +74,10 @@ func revokeByToken(ctx context.Context, db *pgxpool.Pool, hash []byte) error {
 		WHERE revoked_at IS NULL AND family_id = (SELECT family_id FROM refresh_tokens WHERE token_hash = $1)`, hash)
 	return err
 }
+
+// PurgeTokens deletes refresh tokens expired for a week; used or revoked ones are kept until then so that a reuse
+// can still be detected.
+func PurgeTokens(ctx context.Context, q db.Querier) error {
+	_, err := q.Exec(ctx, `DELETE FROM refresh_tokens WHERE expires_at < now() - interval '7 days'`)
+	return err
+}

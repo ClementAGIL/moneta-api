@@ -26,12 +26,23 @@ type Job struct {
 	Attempts int // including the current one
 }
 
+// pendingSQL matches jobs still waiting to run: not done, not given up (a job out of attempts stays in the table
+// for inspection but must not block new ones), and not running right now.
+const pendingSQL = `done_at IS NULL AND attempts < max_attempts AND (locked_until IS NULL OR locked_until < now())`
+
 // EnqueueOnce queues a job for the user unless one of the same kind is already waiting (repeated triggers, such as
 // several corrections in a row, then cost one run).
 func EnqueueOnce(ctx context.Context, db Execer, kind string, userID uuid.UUID) error {
 	_, err := db.Exec(ctx, `INSERT INTO jobs (id, kind, user_id) SELECT $1, $2, $3
-		WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE kind = $2 AND user_id = $3 AND done_at IS NULL
-		  AND (locked_until IS NULL OR locked_until < now()))`, uuid.Must(uuid.NewV7()), kind, userID)
+		WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE kind = $2 AND user_id = $3 AND `+pendingSQL+`)`,
+		uuid.Must(uuid.NewV7()), kind, userID)
+	return err
+}
+
+// Purge deletes finished or abandoned jobs older than a week (the table would otherwise only grow).
+func Purge(ctx context.Context, db Execer) error {
+	_, err := db.Exec(ctx, `DELETE FROM jobs WHERE created_at < now() - interval '7 days'
+		AND (done_at IS NOT NULL OR attempts >= max_attempts)`)
 	return err
 }
 

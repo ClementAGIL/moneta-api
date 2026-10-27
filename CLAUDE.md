@@ -37,10 +37,13 @@ scripts/create-db.sql` | One-time: create the `moneta` role + database |
 cmd/moneta/main.go        entry point: config → DB open + migrate → job worker + HTTP server, graceful shutdown
 cmd/moneta/wire.go        builds services, hooks (import commit → categorize, then queue analyze.user) and job
                           handlers (categorize.user; model.retrain; analyze.user = transfers → model → categorize →
-                          recurring → insights for this and last month); corrections queue model.retrain once; schedules: imports.expire hourly, analyze.daily for every user with data
+                          recurring → insights for this and last month); corrections queue model.retrain once; schedules: housekeeping hourly (expire imports, purge jobs and expired refresh
+                          tokens), analyze.daily for every user with data; a categorization failure after a commit
+                          is logged, not returned (the import is already saved)
 internal/config/          .env (if present, real env wins) + env → Config (see .env.example)
 internal/db/              pgx pool (Open), goose migrations from the embedded migrations/ (Migrate)
-internal/jobs/            scheduler.go Every(interval); queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
+internal/jobs/            scheduler.go Every(interval); queue.go: EnqueueOnce (no duplicate pending job; jobs out of
+                          attempts never block), Purge (week-old finished/abandoned jobs), Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
                           handlers per kind, retry with exponential backoff (30 s × 2^n, max 6 h)
 internal/vault/           envelope encryption: KEK (env) wraps a per-user DEK; UserKeys.Seal/Open (AES-GCM) and Index
                           (HMAC blind index), keys derived with HKDF
@@ -64,7 +67,7 @@ internal/imports/         Service: Upload (grid encrypted, profile by fingerprin
                           Delete (cancel or undo), Get/List (summary.go)
 internal/categorize/      engine.go: user rules (priority, corrections first) → builtin.go French merchant keywords →
                           model (Predictor, plugged in by wire.go via UseModel) → uncategorized; Explain gives why; service.go: Recategorize (all or one import,
-                          skips user/transfer); rules.go: encrypted rules CRUD, Preview, CorrectMerchant (upsert)
+                          skips user/transfer, writes only rows whose category changes); rules.go: encrypted rules CRUD, Preview, CorrectMerchant (upsert)
 internal/ml/               own Naive Bayes: features.go (words, word pairs, merchant trigrams, sign, amount magnitude),
                           naivebayes.go (Train/Add/Predict softmax/Explain, words first), evaluate.go (holdout =
                           newest 20 %, model vs rules on hand-categorized), service.go (Retrain, encrypted gob in
@@ -72,7 +75,7 @@ internal/ml/               own Naive Bayes: features.go (words, word pairs, merc
 internal/export/           Write: ZIP (data.json with everything decrypted + transactions.csv) for GET /me/export
 internal/transactions/    List (filters, keyset cursor, text search in Go on decrypted labels), Get, Edit (category
                           → source user, optional merchant rule; note)
-internal/transfers/       Detect (one-to-one opposite amounts, different accounts, ±3 days → category "transfers"),
+internal/transfers/       Detect (candidates bucketed by amount; one-to-one opposite amounts, different accounts, ±3 days → category "transfers"),
                           Pair / Unpair (manual)
 internal/recurring/       detect.go (pure): cadence from intervals (weekly/monthly/quarterly/yearly, 70 % fit),
                           stable amounts with at most one level change (price increase), next date, ended;

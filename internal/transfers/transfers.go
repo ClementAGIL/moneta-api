@@ -52,13 +52,20 @@ func (s *Service) Detect(ctx context.Context, userID uuid.UUID) (int, error) {
 // match keeps only one-to-one candidates: an outgoing movement with exactly one possible incoming twin that itself
 // has exactly one possible outgoing twin. Ambiguous cases are left to the user.
 func match(moves []movement) [][2]uuid.UUID {
+	// Incoming movements by amount, so each outgoing one only looks at same-size candidates (not all n²).
+	incoming := map[int64][]movement{}
+	for _, m := range moves {
+		if m.amount > 0 {
+			incoming[m.amount] = append(incoming[m.amount], m)
+		}
+	}
 	candidates := map[uuid.UUID][]uuid.UUID{}
 	for _, out := range moves {
 		if out.amount >= 0 {
 			continue
 		}
-		for _, in := range moves {
-			if in.amount == -out.amount && in.account != out.account && closeDates(in.date, out.date) {
+		for _, in := range incoming[-out.amount] {
+			if in.account != out.account && closeDates(in.date, out.date) {
 				candidates[out.id] = append(candidates[out.id], in.id)
 				candidates[in.id] = append(candidates[in.id], out.id)
 			}

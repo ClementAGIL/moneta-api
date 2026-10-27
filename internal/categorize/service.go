@@ -77,7 +77,7 @@ func (s *Service) Recategorize(ctx context.Context, userID uuid.UUID, importID *
 func (s *Service) apply(ctx context.Context, userID uuid.UUID, importID *uuid.UUID, keys *vault.UserKeys,
 	engine *Engine) error {
 	batch := &pgx.Batch{}
-	rows, err := s.db.Query(ctx, `SELECT id, label_enc, amount_cents FROM transactions
+	rows, err := s.db.Query(ctx, `SELECT id, label_enc, amount_cents, category_id, category_source FROM transactions
 		WHERE user_id = $1 AND ($2::uuid IS NULL OR import_id = $2)
 		  AND (category_source IS NULL OR category_source IN ('rule', 'builtin', 'model'))`, userID, importID)
 	if err != nil {
@@ -86,12 +86,17 @@ func (s *Service) apply(ctx context.Context, userID uuid.UUID, importID *uuid.UU
 	var id uuid.UUID
 	var labelEnc []byte
 	var amount int64
-	_, err = pgx.ForEachRow(rows, []any{&id, &labelEnc, &amount}, func() error {
+	var current *uuid.UUID
+	var source *string
+	_, err = pgx.ForEachRow(rows, []any{&id, &labelEnc, &amount, &current, &source}, func() error {
 		label, err := keys.Open(labelEnc)
 		if err != nil {
 			return err
 		}
 		d := engine.Categorize(Txn{Label: label, Amount: amount})
+		if sameID(d.CategoryID, current) && sameString(d.Source, source) {
+			return nil // most rows do not change: skip the write
+		}
 		batch.Queue(`UPDATE transactions SET category_id = $2, category_source = $3, confidence = $4, updated_at = now()
 			WHERE id = $1`, id, d.CategoryID, d.Source, d.Confidence)
 		return nil
@@ -116,3 +121,7 @@ func (s *Service) Explain(ctx context.Context, userID uuid.UUID, label string,
 	d, reasons := engine.Explain(Txn{Label: label, Amount: amount})
 	return d, reasons, nil
 }
+
+func sameID(a, b *uuid.UUID) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
+
+func sameString(a, b *string) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }

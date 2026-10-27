@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -54,9 +55,11 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 	queueAnalysis := func(ctx context.Context, userID uuid.UUID) error {
 		return jobs.EnqueueOnce(ctx, pool, analyzeJob, userID)
 	}
+	// The import is already committed when this runs: a categorization failure is only logged (the analysis job
+	// recategorizes everything anyway), so the client never retries an import that succeeded.
 	afterImport := func(ctx context.Context, userID, importID uuid.UUID) error {
 		if err := svc.categorizer.Recategorize(ctx, userID, &importID); err != nil {
-			return err
+			logger.Error("categorizing import", "import", importID, "err", err)
 		}
 		return queueAnalysis(ctx, userID)
 	}
@@ -85,8 +88,8 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 func (svc services) background(pool *pgxpool.Pool, logger *slog.Logger) func(context.Context) {
 	return func(ctx context.Context) {
 		go svc.worker(pool, logger).Run(ctx)
-		go jobs.Every(ctx, logger, "imports.expire", time.Hour, func(ctx context.Context) error {
-			return imports.Expire(ctx, pool)
+		go jobs.Every(ctx, logger, "housekeeping", time.Hour, func(ctx context.Context) error {
+			return errors.Join(imports.Expire(ctx, pool), jobs.Purge(ctx, pool), auth.PurgeTokens(ctx, pool))
 		})
 		// Insights depend on the current month, so every user is re-analyzed daily even without new imports.
 		go jobs.Every(ctx, logger, "analyze.daily", 24*time.Hour, func(ctx context.Context) error {
@@ -98,7 +101,8 @@ func (svc services) background(pool *pgxpool.Pool, logger *slog.Logger) func(con
 func queueEveryone(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `INSERT INTO jobs (id, kind, user_id) SELECT gen_random_uuid(), $1, u.id FROM users u
 		WHERE EXISTS (SELECT 1 FROM transactions t WHERE t.user_id = u.id)
-		  AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.user_id = u.id AND j.kind = $1 AND j.done_at IS NULL)`, analyzeJob)
+		  AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.user_id = u.id AND j.kind = $1
+		    AND j.done_at IS NULL AND j.attempts < j.max_attempts)`, analyzeJob)
 	return err
 }
 
