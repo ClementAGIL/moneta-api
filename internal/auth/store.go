@@ -8,11 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-)
 
-const uniqueViolation = "23505"
+	"github.com/ClementAGIL/moneta-api/internal/db"
+)
 
 type refreshRow struct {
 	userID   uuid.UUID
@@ -20,11 +19,10 @@ type refreshRow struct {
 	reused   bool
 }
 
-func insertUser(ctx context.Context, db *pgxpool.Pool, id uuid.UUID, email, hash string, dek []byte) error {
-	_, err := db.Exec(ctx, `INSERT INTO users (id, email, password_hash, dek_wrapped) VALUES ($1, $2, $3, $4)`,
+func insertUser(ctx context.Context, q db.Querier, id uuid.UUID, email, hash string, dek []byte) error {
+	_, err := q.Exec(ctx, `INSERT INTO users (id, email, password_hash, dek_wrapped) VALUES ($1, $2, $3, $4)`,
 		id, email, hash, dek)
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+	if db.IsUnique(err) {
 		return ErrEmailTaken
 	}
 	return err

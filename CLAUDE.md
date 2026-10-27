@@ -41,11 +41,15 @@ internal/vault/           envelope encryption: KEK (env) wraps a per-user DEK; U
 internal/auth/            argon2id (password.go), JWT HS256 15 min + opaque refresh tokens (tokens.go), Service:
                           Register/Login/Refresh (rotation, reuse revokes the family)/Logout/Verify (service.go),
                           SQL (store.go), Me + Keys (user.go)
-internal/httpapi/         router.go: Deps, routes; respond.go: apiError → {error:{code,message,fields}}, decodeJSON;
+internal/apperr/          domain errors (NotFound, Invalid(field), Conflict) mapped to 404/422/409 by httpapi
+internal/db/querier.go    Querier (pool or tx), IsUnique/IsForeignKey, NotFoundIfNoRows, Affected, CleanName
+internal/accounts/        banks + accounts (anchor balance/date; balance = anchor + movements after it)
+internal/categories/      per-user two-level tree, defaults.go seeded at sign-up (stable keys), CRUD
+internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
                           body limit, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
-migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens), embedded by embed.go
+migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens, 00003 banks/accounts/categories), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
@@ -61,6 +65,7 @@ transaction).
 
 - Handlers are `handlerFunc` returning errors; return `apiError` helpers (errValidation, errNotFound…) for client
   errors, anything else is logged and becomes a 500.
+- Domain packages return `apperr` errors; stores take a `db.Querier` and are cheap to build per request.
 - Every query filters on `user_id`; never trust an id from the request without that filter.
 - Money is `int64` cents, signed (negative = out). Never `float64` for money.
 - Sensitive text (labels, merchants, notes, rule patterns) is stored encrypted (`_enc` columns, `internal/crypto`);
@@ -87,4 +92,5 @@ transaction).
   real database: migration applied, a job without handler fails and is rescheduled 30 s later, unlocked).
 - ✅ M2: register/login/refresh/logout/me, argon2id, JWT + rotating refresh tokens (cookie for web, body for
   mobile with `client: "mobile"`), stolen-token family revocation, rate limits, vault (KEK/DEK). Smoke-tested.
-- Next: M3 (banks, accounts, default categories).
+- ✅ M3: banks/accounts/categories CRUD, default categories seeded in the sign-up transaction. Smoke-tested.
+- Next: M4 (import pipeline).

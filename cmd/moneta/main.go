@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ClementAGIL/moneta-api/internal/auth"
+	"github.com/ClementAGIL/moneta-api/internal/categories"
 	"github.com/ClementAGIL/moneta-api/internal/config"
 	"github.com/ClementAGIL/moneta-api/internal/db"
 	"github.com/ClementAGIL/moneta-api/internal/httpapi"
@@ -57,7 +58,7 @@ func run(logger *slog.Logger) error {
 	go jobs.NewWorker(pool, logger).Run(ctx)
 	srv := &http.Server{
 		Addr: cfg.Addr,
-		Handler: httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: pool, Auth: auth.NewService(pool, kek, cfg.JWTSecret),
+		Handler: httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: pool, Auth: auth.NewService(pool, kek, cfg.JWTSecret, categories.Seed),
 			WebDir: cfg.WebDir, CookieSecure: cfg.CookieSecure}),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ClementAGIL/moneta-api/internal/vault"
@@ -42,16 +43,20 @@ type Tokens struct {
 
 // Service holds the auth dependencies.
 type Service struct {
-	db     *pgxpool.Pool
-	kek    *vault.KEK
-	secret []byte
+	db         *pgxpool.Pool
+	kek        *vault.KEK
+	secret     []byte
+	onRegister SetupFunc
 }
 
-func NewService(db *pgxpool.Pool, kek *vault.KEK, jwtSecret []byte) *Service {
-	return &Service{db: db, kek: kek, secret: jwtSecret}
+// SetupFunc creates a new user's starting data (default categories) in the sign-up transaction.
+type SetupFunc func(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error
+
+func NewService(db *pgxpool.Pool, kek *vault.KEK, jwtSecret []byte, onRegister SetupFunc) *Service {
+	return &Service{db: db, kek: kek, secret: jwtSecret, onRegister: onRegister}
 }
 
-// Register creates a user with a fresh data key.
+// Register creates a user with a fresh data key and its starting data, all or nothing.
 func (s *Service) Register(ctx context.Context, email, password string) (uuid.UUID, error) {
 	email, err := normalizeEmail(email)
 	if err != nil {
@@ -60,11 +65,15 @@ func (s *Service) Register(ctx context.Context, email, password string) (uuid.UU
 	if n := utf8.RuneCountInString(password); n < minPasswordLen || n > maxPasswordLen {
 		return uuid.Nil, ErrWeakPassword
 	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return uuid.Nil, err
-	}
-	return id, insertUser(ctx, s.db, id, email, HashPassword(password), s.kek.NewWrappedDEK(id))
+	id := uuid.Must(uuid.NewV7())
+	hash := HashPassword(password)
+	err = pgx.BeginFunc(ctx, s.db, func(tx pgx.Tx) error {
+		if err := insertUser(ctx, tx, id, email, hash, s.kek.NewWrappedDEK(id)); err != nil {
+			return err
+		}
+		return s.onRegister(ctx, tx, id)
+	})
+	return id, err
 }
 
 // Login checks the credentials and starts a new token family.

@@ -33,6 +33,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/health", health)
 	mux.Handle("GET /api/ready", ready(deps.DB))
 	s.authRoutes(mux)
+	s.resourceRoutes(mux)
 	mux.HandleFunc("/api/", apiNotFound)
 	if deps.WebDir != "" {
 		mux.Handle("/", webApp(deps.WebDir))
