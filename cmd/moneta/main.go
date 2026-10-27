@@ -25,7 +25,7 @@ func main() {
 	cfg := config.Load()
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(logger),
+		Handler:           httpapi.NewRouter(logger, cfg.WebDir),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 

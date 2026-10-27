@@ -11,13 +11,16 @@ Two repos, local git for now:
 
 | Repo                  | Role                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------ |
-| `E:\Repos\moneta-api` | this repo: Go API, PostgreSQL, background jobs, Docker Compose stack                       |
+| `E:\Repos\moneta-api` | this repo: Go API, PostgreSQL, background jobs; serves the built web app in production    |
 | `E:\Repos\moneta-app` | npm-workspaces monorepo: `apps/web` (Vite + React), `apps/mobile` (Expo, Android first),   |
 |                       | `packages/shared` (design tokens, API client + types, hooks, formatting); see its PLAN.md |
 
 Decisions taken with the user (2026-10-27):
 
-- **Public multi-user** (sign-up open), hosted on the **home server with Docker**.
+- **Public multi-user** (sign-up open), hosted on the **home server, natively**: PostgreSQL as a Windows service and
+  one `moneta.exe` serving the API on `/api` and the built web app on `/` (same origin, no proxy). Docker was the
+  first plan but the PC has hardware virtualization disabled; the Dockerfile and compose file stay as an optional,
+  CI-built way to run the project.
 - Banks export **CSV and XLSX**. New formats are handled by a **column-mapping wizard**; the mapping is saved as an
   import profile and recognized automatically next time.
 - Import from **web upload** and the **Android share sheet**. Original files are **never stored**.
@@ -34,8 +37,8 @@ Decisions taken with the user (2026-10-27):
 - Clients: **React + TypeScript web** and **React Native / Expo mobile** (Android first) in one monorepo, sharing
   design tokens, the API client and data hooks (changed from native Kotlin the same day, to share the design system).
 
-Environment found: JDK 17, Node 22.14, Android SDK. **Go and Docker are not installed yet**
-(`winget install GoLang.Go`, `winget install Docker.DockerDesktop`).
+Environment: JDK 17, Node 22.14, Android SDK, Go 1.27, PostgreSQL 18 (`D:\PostgreSQL`, service
+`postgresql-x64-18`, shared with Nutrimo; Moneta has its own role and database). Docker Desktop cannot run here.
 
 ---
 
@@ -54,7 +57,7 @@ Environment found: JDK 17, Node 22.14, Android SDK. **Go and Docker are not inst
 | Encodings      | `golang.org/x/text/encoding/charmap`                       | French banks export Windows-1252                  |
 | Logs           | `log/slog` JSON                                            |                                                   |
 | Lint / format  | `gofmt`, `go vet`, `golangci-lint`                         |                                                   |
-| Database       | PostgreSQL 17                                              |                                                   |
+| Database       | PostgreSQL 17+ (18 on the dev PC)                          | features used exist since 13; CI tests on 17      |
 
 Old binary `.xls` (Excel 97) has no maintained pure-Go reader: the wizard asks the user to re-save as .xlsx or CSV.
 If one of the user's banks only gives .xls, add a converter step then (LibreOffice headless in the container).
@@ -155,7 +158,7 @@ Non catégorisé.
   attacker who controls the running server (it holds the KEK).
 - **Uploads:** 5 MB max, read in memory, never written to disk; the parsed grid is stored encrypted until commit.
 - **Rate limits** (in memory, token bucket): login 5/min per IP + email, register 3/h per IP, import 20/h per user.
-- **CORS:** only `MONETA_WEB_ORIGIN`. In production the web app and API share one origin through Caddy.
+- **CORS:** only `MONETA_WEB_ORIGIN`. In production the API serves the web app itself, so they share one origin.
 - **GDPR:** `GET /me/export` (ZIP: JSON of everything + one CSV of transactions), `DELETE /me` (password confirm).
 - Email verification / password reset need SMTP: later, behind an optional `SMTP_*` config.
 
@@ -312,7 +315,7 @@ Free-text search `q` runs in Go over the user's decrypted labels in the date ran
 
 | #   | Milestone                                                                                     | With web     |
 | --- | --------------------------------------------------------------------------------------------- | ------------ |
-| M0  | ✅ Scaffold: `/api/health`, Dockerfile, compose, docs                                          | W0           |
+| M0  | ✅ Scaffold: `/api/health`, web app serving, Dockerfile, compose, CI, docs                     | W0           |
 | M1  | DB: pgx pool, goose embedded migrations, sqlc setup, `/ready`, job queue skeleton             |              |
 | M2  | Auth: users, argon2id, JWT, refresh rotation, auth middleware, rate limits, crypto (KEK/DEK)  | W1           |
 | M3  | Banks, accounts, default categories                                                           | W2           |

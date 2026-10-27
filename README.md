@@ -20,21 +20,24 @@ Clients: [moneta-app](../moneta-app), a monorepo with the React web app and the 
 ## Requirements
 
 - Go 1.24+ (`winget install GoLang.Go`)
-- Docker Desktop for the full stack (`winget install Docker.DockerDesktop`), or a local PostgreSQL 17
+- PostgreSQL 17+ (Windows installer from postgresql.org, or any Linux package)
 
 ## Run
 
 ```sh
-cp .env.example .env          # then fill in the secrets
-go run ./cmd/moneta           # API on :8080
+cp .env.example .env                                     # then fill in the secrets
+psql -U postgres -v pw=<POSTGRES_PASSWORD> -f scripts/create-db.sql   # once: moneta role + database
+go run ./cmd/moneta                                      # API on :8080
 curl http://localhost:8080/api/health
 ```
 
-Full stack (database, API, web app served by Caddy), with `../moneta-app` checked out next to this repo:
+To serve the web app from the same process (production), build [moneta-app](../moneta-app)'s web app and point
+`MONETA_WEB_DIR` at its `apps/web/dist`: the API then serves the app on `/` and itself on `/api`.
 
-```sh
-docker compose up -d --build   # then open http://<server>:8000
-```
+### Optional: Docker
+
+`docker compose up -d --build` starts PostgreSQL, the API and the web app (Caddy) on port 8000, with `../moneta-app`
+checked out next to this repo. Handy to try the project without installing Go or PostgreSQL; CI builds both images.
 
 ## Security model
 

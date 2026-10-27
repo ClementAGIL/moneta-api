@@ -12,9 +12,11 @@ before changing behavior.
 
 ## Stack
 
-Go 1.24+, standard `net/http` mux, pgx v5 + sqlc, goose migrations (embedded), PostgreSQL 17, `log/slog`.
-Runs with Docker Compose on the user's home server. No unit tests by default (user's rule); verify with
-`go vet`, `golangci-lint`, `docs/requests.http` and real imports.
+Go 1.24+, standard `net/http` mux, pgx v5 + sqlc, goose migrations (embedded), PostgreSQL 17+, `log/slog`.
+Runs **natively** (no Docker: the dev PC has no hardware virtualization): PostgreSQL 18 Windows service
+(`postgresql-x64-18`, `D:\PostgreSQL`, shared with Nutrimo, own `moneta` role + database), `moneta.exe` serving the API
+and the built web app (`MONETA_WEB_DIR`). Dockerfile + compose stay as an optional way to run it, built by CI.
+No unit tests by default (user's rule); verify with `go vet`, `golangci-lint`, `docs/requests.http` and real imports.
 
 ## Commands
 
@@ -23,14 +25,18 @@ Runs with Docker Compose on the user's home server. No unit tests by default (us
 | `go run ./cmd/moneta`                | Run the API (reads `.env` values from the env) |
 | `go build ./... && go vet ./...`     | Compile and vet (run before calling a change done) |
 | `gofmt -l .`                         | Must print nothing                            |
-| `docker compose up -d --build`       | Full stack: db, api, web on :8000 (needs `../moneta-app`) |
+| `psql -U postgres -v pw=… -f scripts/create-db.sql` | One-time: create the `moneta` role + database |
+| `docker compose up -d --build`       | Optional full stack in containers (not usable on the dev PC) |
 
 ## Architecture
 
 ```
 cmd/moneta/main.go        entry point: config, HTTP server, graceful shutdown
 internal/config/          env → Config (see .env.example)
-internal/httpapi/         router (Go 1.22 method patterns), JSON helpers, access log middleware
+internal/httpapi/         router (Go 1.22 method patterns), JSON helpers, access log middleware;
+                          static.go serves the web build with index.html fallback
+scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
+.github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
 
 Planned packages (see `docs/PLAN.md` "Code layout"): db, auth, crypto, money, importer, labels, dedup, transfers,
@@ -56,7 +62,8 @@ categorize, ml, recurring, budgets, forecast, insights, jobs, export.
 
 ## Status
 
-- ✅ M0 scaffold: `GET /api/health`, Dockerfile, docker-compose (db + api + web), plan.
-- Dev PC: Go 1.27 (`C:\Program Files\Go\bin`, may be missing from PATH in old shells), Docker Desktop (needs WSL 2).
-  `go build`, `go vet`, `gofmt` clean; `/api/health` answers when run locally. Docker stack not yet started.
+- ✅ M0 scaffold: `GET /api/health`, JSON 404 for unknown `/api/` paths, web app served from `MONETA_WEB_DIR` with
+  SPA fallback, Dockerfile + compose (optional), CI, plan.
+- Dev PC: Go 1.27 (`C:\Program Files\Go\bin`, may be missing from PATH in old shells). Docker Desktop is installed
+  but cannot run (virtualization off in the BIOS).
 - Next: M1 (database, migrations, job queue skeleton).

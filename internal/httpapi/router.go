@@ -8,10 +8,14 @@ import (
 	"time"
 )
 
-// NewRouter returns the API handler with logging applied to every route.
-func NewRouter(logger *slog.Logger) http.Handler {
+// NewRouter returns the API handler with logging applied to every route. A non-empty webDir also serves the web app.
+func NewRouter(logger *slog.Logger, webDir string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", health)
+	mux.HandleFunc("/api/", apiNotFound)
+	if webDir != "" {
+		mux.Handle("/", webApp(webDir))
+	}
 	return logRequests(logger, mux)
 }
 
