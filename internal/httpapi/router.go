@@ -11,6 +11,7 @@ import (
 
 	"github.com/ClementAGIL/moneta-api/internal/auth"
 	"github.com/ClementAGIL/moneta-api/internal/categorize"
+	"github.com/ClementAGIL/moneta-api/internal/forecast"
 	"github.com/ClementAGIL/moneta-api/internal/imports"
 	"github.com/ClementAGIL/moneta-api/internal/insights"
 	"github.com/ClementAGIL/moneta-api/internal/ml"
@@ -33,6 +34,7 @@ type Deps struct {
 	Recurring    *recurring.Service
 	Insights     *insights.Service
 	Model        *ml.Service
+	Forecast     *forecast.Service
 	// Analyze queues the background analysis (transfers, recurring, insights) of a user.
 	Analyze      func(ctx context.Context, userID uuid.UUID) error
 	WebDir       string // non-empty: also serve the built web app on /

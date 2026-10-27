@@ -1,4 +1,4 @@
-// Classifier status, retraining, and "why this category" for a transaction.
+// Classifier status, retraining, "why this category" for a transaction, and the end-of-month forecast.
 package httpapi
 
 import (
@@ -21,6 +21,7 @@ func (s *server) modelRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/model", s.authed(s.modelStatus))
 	mux.Handle("POST /api/v1/model/retrain", s.authed(s.retrainModel))
 	mux.Handle("GET /api/v1/transactions/{id}/explain", s.authed(s.explainTransaction))
+	mux.Handle("GET /api/v1/forecast", s.authed(s.forecast))
 }
 
 func (s *server) modelStatus(w http.ResponseWriter, r *http.Request) error {
@@ -58,4 +59,13 @@ func (s *server) explainTransaction(w http.ResponseWriter, r *http.Request) erro
 	}
 	writeJSON(w, http.StatusOK, e)
 	return nil
+}
+
+// forecast: ?account=<id> (default: all current and card accounts).
+func (s *server) forecast(w http.ResponseWriter, r *http.Request) error {
+	account, err := optionalID(r.URL.Query().Get("account"), "account")
+	if err != nil {
+		return err
+	}
+	return respond(w)(s.Forecast.Month(r.Context(), userID(r), account, time.Now()))
 }

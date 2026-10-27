@@ -81,11 +81,15 @@ internal/budgets/         Set (0 removes) and Progress (month spending incl. sub
 internal/insights/        insights.go Generate (run rules, upsert by kind/period/ref, drop stale, keep dismissed),
                           List, Dismiss; rules.go + rules_more.go: one function per rule (category trend vs
                           average of months with data, budget 80 %/100 %, price increase, new subscription,
-                          duplicate subscriptions, large expense, bank fees, savings rate); params = ids + amounts
+                          duplicate subscriptions, large expense, bank fees, savings rate, forecast below zero);
+                          params = ids + amounts
+internal/forecast/        Month: balance (anchor + movements) + recurring items still due + bootstrap of the last 90
+                          days of non-recurring daily net (500 seeded simulations → p25/p50/p75 per day); current
+                          and card accounts by default
 internal/stats/           Summary (month vs previous + 6-month average, savings rate, by top-level category),
                           Categories (monthly series), Merchants (top by spending); transfers/excluded ignored
 internal/httpapi/         router.go: Deps, routes; resources.go: banks/accounts/categories CRUD; imports_handlers.go;
-                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); budgets_handlers.go (+ insights); model_handlers.go (+ explain); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
+                          transactions_handlers.go (transactions + rules); stats_handlers.go; recurring_handlers.go (+ transfer pairing); budgets_handlers.go (+ insights); model_handlers.go (+ explain, forecast); respond.go: apiError → {error:{code,message,fields}}, respond(w)(v, err), decodeJSON;
                           middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
                           body limit, panic recovery, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
                           probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
@@ -148,4 +152,6 @@ transaction).
 - ✅ M9: own Naive Bayes classifier, holdout evaluation, explanations. Tested: 12 hand corrections of an unknown
   bakery → the 36 others categorized by the model (90 % holdout accuracy). Fixed: labels.Normalize shared a
   stateful transformer across goroutines (crash under concurrent import + job); job panics are now recovered.
-- Next: W8 (model status, "why this category"), then M10 (forecast).
+- ✅ W8 done in moneta-app.
+- ✅ M10: forecast endpoint + forecast_negative insight.
+- Next: W9 (forecast chart), then M11 (export, delete account, hardening).

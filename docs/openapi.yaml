@@ -401,6 +401,14 @@ paths:
                   source: { type: [string, 'null'] }
                   categoryId: { type: [string, 'null'], format: uuid }
                   reasons: { type: array, items: { type: string } }
+  /forecast:
+    get:
+      summary: End-of-month balance forecast (bootstrap of the last 90 days + recurring items still due)
+      parameters: [{ name: account, in: query, description: Default all current and card accounts, schema: { type: string, format: uuid } }]
+      responses:
+        '200':
+          description: Forecast
+          content: { application/json: { schema: { $ref: '#/components/schemas/Forecast' } } }
   /stats/summary:
     get:
       summary: Month totals vs previous month and 6-month average, spending per top-level category
@@ -765,6 +773,32 @@ components:
         modelOnUser: { type: number }
         rulesOnUser: { type: number }
         active: { type: boolean, description: Used for transactions no rule matches }
+    ForecastDay:
+      type: object
+      required: [date, p25Cents, p50Cents, p75Cents]
+      properties:
+        date: { type: string, format: date }
+        p25Cents: { type: integer }
+        p50Cents: { type: integer }
+        p75Cents: { type: integer }
+    Forecast:
+      type: object
+      required: [accountId, today, balanceCents, expected, days, endOfMonth]
+      properties:
+        accountId: { type: [string, 'null'], format: uuid }
+        today: { type: string, format: date }
+        balanceCents: { type: integer }
+        expected:
+          type: array
+          items:
+            type: object
+            required: [name, date, amountCents]
+            properties:
+              name: { type: string }
+              date: { type: string, format: date }
+              amountCents: { type: integer }
+        days: { type: array, items: { $ref: '#/components/schemas/ForecastDay' } }
+        endOfMonth: { $ref: '#/components/schemas/ForecastDay' }
     Merchant:
       type: object
       required: [name, spendingCents, count]

@@ -24,7 +24,7 @@ const (
 type rule func(ctx context.Context, db *pgxpool.Pool, userID uuid.UUID, month time.Time) ([]Insight, error)
 
 var rules = []rule{categoryTrends, budgetAlerts, priceIncreases, newSubscriptions, duplicateSubscriptions,
-	largeExpense, bankFees, savingsRate}
+	largeExpense, bankFees, savingsRate, forecastNegative}
 
 // historyMonths counts the months with data in the 6 months before $2: averages divide by it, not by 6, so a short
 // history does not look like a spending jump.

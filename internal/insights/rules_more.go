@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ClementAGIL/moneta-api/internal/forecast"
 )
 
 // duplicateSubscriptions flags several active subscriptions in the same category (e.g. three streaming services).
@@ -85,6 +87,25 @@ func savingsRate(ctx context.Context, db *pgxpool.Pool, userID uuid.UUID, month 
 		return []Insight{newInsight("savings_down", "warn", "", params)}, nil
 	case rate > average+savingsDropRatio:
 		return []Insight{newInsight("savings_up", "good", "", params)}, nil
+	}
+	return nil, nil
+}
+
+// forecastNegative warns when the median projected balance goes below zero before the end of the current month.
+func forecastNegative(ctx context.Context, db *pgxpool.Pool, userID uuid.UUID, month time.Time) ([]Insight, error) {
+	now := time.Now()
+	if month.Year() != now.Year() || month.Month() != now.Month() {
+		return nil, nil
+	}
+	f, err := forecast.NewService(db, nil).Month(ctx, userID, nil, now)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range f.Days {
+		if d.P50 < 0 {
+			return []Insight{newInsight("forecast_negative", "alert", "",
+				map[string]any{"balanceCents": d.P50, "date": d.Date})}, nil
+		}
 	}
 	return nil, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ClementAGIL/moneta-api/internal/categories"
 	"github.com/ClementAGIL/moneta-api/internal/categorize"
 	"github.com/ClementAGIL/moneta-api/internal/config"
+	"github.com/ClementAGIL/moneta-api/internal/forecast"
 	"github.com/ClementAGIL/moneta-api/internal/httpapi"
 	"github.com/ClementAGIL/moneta-api/internal/imports"
 	"github.com/ClementAGIL/moneta-api/internal/insights"
@@ -72,6 +73,7 @@ func wire(pool *pgxpool.Pool, kek *vault.KEK, cfg config.Config, logger *slog.Lo
 		Recurring:    svc.recurring,
 		Insights:     svc.insights,
 		Model:        svc.model,
+		Forecast:     forecast.NewService(pool, authSvc),
 		Analyze:      queueAnalysis,
 		WebDir:       cfg.WebDir,
 		CookieSecure: cfg.CookieSecure,
