@@ -1,5 +1,5 @@
 # Two-stage build: compile a static binary, then run it on a minimal distroless image.
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download

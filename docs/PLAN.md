@@ -46,11 +46,11 @@ Environment: JDK 17, Node 22.14, Android SDK, Go 1.27, PostgreSQL 18 (`D:\Postgr
 
 | Concern        | Choice                                                     | Why                                               |
 | -------------- | ---------------------------------------------------------- | ------------------------------------------------- |
-| Language       | Go 1.24+                                                   | new backend stack for the portfolio               |
+| Language       | Go 1.26+ (required by pgx)                                 | new backend stack for the portfolio               |
 | HTTP           | standard `net/http` (1.22 method patterns), own middleware | no framework needed                               |
 | DB driver      | `jackc/pgx/v5` (pool)                                      | the reference PostgreSQL driver                   |
-| Queries        | `sqlc` (SQL → typed Go)                                    | plain SQL, type-safe, no ORM                      |
-| Migrations     | `pressly/goose/v3`, SQL files embedded in the binary       | `moneta migrate` on startup                       |
+| Queries        | hand-written SQL with pgx, one repository file per table   | no ORM; sqlc dropped: needs cgo on Windows        |
+| Migrations     | `pressly/goose/v3`, SQL files embedded in the binary       | applied on startup                                |
 | Passwords      | `golang.org/x/crypto/argon2` (argon2id)                    | current recommendation                            |
 | Tokens         | `golang-jwt/jwt/v5` (HS256) + opaque refresh tokens        |                                                   |
 | XLSX           | `xuri/excelize/v2`                                         | reads .xlsx; old .xls is not supported (see below) |
@@ -67,9 +67,9 @@ If one of the user's banks only gives .xls, add a converter step then (LibreOffi
 ## Code layout
 
 ```
-cmd/moneta/main.go          subcommands: serve (default), migrate; starts the job worker inside serve
+cmd/moneta/main.go          config → DB open + migrate → job worker goroutine + HTTP server, graceful shutdown
 internal/config/            env → Config
-internal/db/                pgx pool, goose migrations (embed), sqlc output in db/queries/
+internal/db/                pgx pool, goose migrations (embedded from migrations/)
 internal/httpapi/           router, middleware (logging, recover, auth, CORS, rate limit, body limit), errors
 internal/httpapi/handlers/  one file per resource (auth, accounts, imports, transactions, stats, ...)
 internal/auth/              argon2id hashing, JWT issue/verify, refresh-token rotation
@@ -316,7 +316,7 @@ Free-text search `q` runs in Go over the user's decrypted labels in the date ran
 | #   | Milestone                                                                                     | With web     |
 | --- | --------------------------------------------------------------------------------------------- | ------------ |
 | M0  | ✅ Scaffold: `/api/health`, web app serving, Dockerfile, compose, CI, docs                     | W0           |
-| M1  | DB: pgx pool, goose embedded migrations, sqlc setup, `/ready`, job queue skeleton             |              |
+| M1  | ✅ DB: pgx pool, goose embedded migrations, `.env` loading, `/api/ready`, job queue + worker   |              |
 | M2  | Auth: users, argon2id, JWT, refresh rotation, auth middleware, rate limits, crypto (KEK/DEK)  | W1           |
 | M3  | Banks, accounts, default categories                                                           | W2           |
 | M4  | Import: detect, grid, profiles, mapping, parse, dedup, review, commit, undo                   | W3           |

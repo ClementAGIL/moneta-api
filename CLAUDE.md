@@ -12,7 +12,7 @@ before changing behavior.
 
 ## Stack
 
-Go 1.24+, standard `net/http` mux, pgx v5 + sqlc, goose migrations (embedded), PostgreSQL 17+, `log/slog`.
+Go 1.26+, standard `net/http` mux, pgx v5 (hand-written SQL), goose migrations (embedded), PostgreSQL 17+, `log/slog`.
 Runs **natively** (no Docker: the dev PC has no hardware virtualization): PostgreSQL 18 Windows service
 (`postgresql-x64-18`, `D:\PostgreSQL`, shared with Nutrimo, own `moneta` role + database), `moneta.exe` serving the API
 and the built web app (`MONETA_WEB_DIR`). Dockerfile + compose stay as an optional way to run it, built by CI.
@@ -31,16 +31,24 @@ No unit tests by default (user's rule); verify with `go vet`, `golangci-lint`, `
 ## Architecture
 
 ```
-cmd/moneta/main.go        entry point: config, HTTP server, graceful shutdown
-internal/config/          env → Config (see .env.example)
-internal/httpapi/         router (Go 1.22 method patterns), JSON helpers, access log middleware;
-                          static.go serves the web build with index.html fallback
+cmd/moneta/main.go        entry point: config → DB open + migrate → job worker + HTTP server, graceful shutdown
+internal/config/          .env (if present, real env wins) + env → Config (see .env.example)
+internal/db/              pgx pool (Open), goose migrations from the embedded migrations/ (Migrate)
+internal/jobs/            queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
+                          handlers per kind, retry with exponential backoff (30 s × 2^n, max 6 h)
+internal/httpapi/         router.go: Deps, routes, JSON helper, access log; probes.go: /api/health, /api/ready (DB
+                          ping); static.go: web build with index.html fallback, JSON 404 for unknown /api/ paths
+migrations/               goose SQL files (00001_jobs.sql), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
 
-Planned packages (see `docs/PLAN.md` "Code layout"): db, auth, crypto, money, importer, labels, dedup, transfers,
-categorize, ml, recurring, budgets, forecast, insights, jobs, export.
+Planned packages (see `docs/PLAN.md` "Code layout"): auth, crypto, money, importer, labels, dedup, transfers,
+categorize, ml, recurring, budgets, forecast, insights, export.
+
+New migration: `migrations/000NN_name.sql` with `-- +goose Up` / `-- +goose Down`; it runs on the next start.
+Queries are plain SQL with pgx in the package that owns the table (`Execer`-style interfaces so they also work in a
+transaction).
 
 ## Conventions
 
@@ -66,4 +74,6 @@ categorize, ml, recurring, budgets, forecast, insights, jobs, export.
   SPA fallback, Dockerfile + compose (optional), CI, plan.
 - Dev PC: Go 1.27 (`C:\Program Files\Go\bin`, may be missing from PATH in old shells). Docker Desktop is installed
   but cannot run (virtualization off in the BIOS).
-- Next: M1 (database, migrations, job queue skeleton).
+- ✅ M1: pool, embedded migrations on startup, `.env` loading, `/api/ready`, job queue + worker (checked on the
+  real database: migration applied, a job without handler fails and is rescheduled 30 s later, unlocked).
+- Next: M2 (users, argon2id, JWT + refresh rotation, auth middleware, rate limits, KEK/DEK crypto).

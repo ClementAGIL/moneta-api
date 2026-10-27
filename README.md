@@ -19,7 +19,7 @@ Clients: [moneta-app](../moneta-app), a monorepo with the React web app and the 
 
 ## Requirements
 
-- Go 1.24+ (`winget install GoLang.Go`)
+- Go 1.26+ (`winget install GoLang.Go`)
 - PostgreSQL 17+ (Windows installer from postgresql.org, or any Linux package)
 
 ## Run

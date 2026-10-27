@@ -6,21 +6,27 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// NewRouter returns the API handler with logging applied to every route. A non-empty webDir also serves the web app.
-func NewRouter(logger *slog.Logger, webDir string) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/health", health)
-	mux.HandleFunc("/api/", apiNotFound)
-	if webDir != "" {
-		mux.Handle("/", webApp(webDir))
-	}
-	return logRequests(logger, mux)
+// Deps are the shared services handlers need.
+type Deps struct {
+	Logger *slog.Logger
+	DB     *pgxpool.Pool
+	WebDir string // non-empty: also serve the built web app on /
 }
 
-func health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+// NewRouter returns the API handler with logging applied to every route.
+func NewRouter(deps Deps) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/health", health)
+	mux.Handle("GET /api/ready", ready(deps.DB))
+	mux.HandleFunc("/api/", apiNotFound)
+	if deps.WebDir != "" {
+		mux.Handle("/", webApp(deps.WebDir))
+	}
+	return logRequests(deps.Logger, mux)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
