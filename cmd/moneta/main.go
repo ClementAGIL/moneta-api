@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ClementAGIL/moneta-api/internal/auth"
 	"github.com/ClementAGIL/moneta-api/internal/config"
 	"github.com/ClementAGIL/moneta-api/internal/db"
 	"github.com/ClementAGIL/moneta-api/internal/httpapi"
 	"github.com/ClementAGIL/moneta-api/internal/jobs"
+	"github.com/ClementAGIL/moneta-api/internal/vault"
 )
 
 const (
@@ -36,6 +38,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	kek, err := vault.ParseKEK(cfg.MasterKey)
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -50,8 +56,9 @@ func run(logger *slog.Logger) error {
 
 	go jobs.NewWorker(pool, logger).Run(ctx)
 	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: pool, WebDir: cfg.WebDir}),
+		Addr: cfg.Addr,
+		Handler: httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: pool, Auth: auth.NewService(pool, kek, cfg.JWTSecret),
+			WebDir: cfg.WebDir, CookieSecure: cfg.CookieSecure}),
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	return serve(ctx, srv, logger)

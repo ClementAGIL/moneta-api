@@ -14,7 +14,13 @@ type Config struct {
 	Addr        string
 	DatabaseURL string
 	WebDir      string // built web app (moneta-app/apps/web/dist) served at /; empty in dev (Vite serves it)
+	MasterKey   string // base64 32 bytes, wraps every user's data key
+	JWTSecret   []byte
+	// CookieSecure marks the refresh cookie HTTPS-only; off on the plain-HTTP home LAN.
+	CookieSecure bool
 }
+
+const minJWTSecretLen = 32
 
 // Load reads .env (real environment variables win), then the environment, with development defaults.
 func Load() (Config, error) {
@@ -22,12 +28,20 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		Addr:        getenv("MONETA_ADDR", ":8080"),
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		WebDir:      os.Getenv("MONETA_WEB_DIR"),
+		Addr:         getenv("MONETA_ADDR", ":8080"),
+		DatabaseURL:  os.Getenv("DATABASE_URL"),
+		WebDir:       os.Getenv("MONETA_WEB_DIR"),
+		MasterKey:    os.Getenv("MONETA_MASTER_KEY"),
+		JWTSecret:    []byte(os.Getenv("MONETA_JWT_SECRET")),
+		CookieSecure: os.Getenv("MONETA_COOKIE_SECURE") == "true",
 	}
-	if cfg.DatabaseURL == "" {
+	switch {
+	case cfg.DatabaseURL == "":
 		return Config{}, errors.New("DATABASE_URL is not set (see .env.example)")
+	case cfg.MasterKey == "":
+		return Config{}, errors.New("MONETA_MASTER_KEY is not set (see .env.example)")
+	case len(cfg.JWTSecret) < minJWTSecretLen:
+		return Config{}, fmt.Errorf("MONETA_JWT_SECRET must be at least %d characters", minJWTSecretLen)
 	}
 	return cfg, nil
 }

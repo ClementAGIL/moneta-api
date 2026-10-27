@@ -36,14 +36,21 @@ internal/config/          .env (if present, real env wins) + env → Config (see
 internal/db/              pgx pool (Open), goose migrations from the embedded migrations/ (Migrate)
 internal/jobs/            queue.go: Enqueue (pool or tx); worker.go: claim with SKIP LOCKED + 5 min lease,
                           handlers per kind, retry with exponential backoff (30 s × 2^n, max 6 h)
-internal/httpapi/         router.go: Deps, routes, JSON helper, access log; probes.go: /api/health, /api/ready (DB
-                          ping); static.go: web build with index.html fallback, JSON 404 for unknown /api/ paths
-migrations/               goose SQL files (00001_jobs.sql), embedded by embed.go
+internal/vault/           envelope encryption: KEK (env) wraps a per-user DEK; UserKeys.Seal/Open (AES-GCM) and Index
+                          (HMAC blind index), keys derived with HKDF
+internal/auth/            argon2id (password.go), JWT HS256 15 min + opaque refresh tokens (tokens.go), Service:
+                          Register/Login/Refresh (rotation, reuse revokes the family)/Logout/Verify (service.go),
+                          SQL (store.go), Me + Keys (user.go)
+internal/httpapi/         router.go: Deps, routes; respond.go: apiError → {error:{code,message,fields}}, decodeJSON;
+                          middleware.go: handle (error-returning handlers), authed (Bearer → userID(r)), limited,
+                          body limit, access log; ratelimit.go: token buckets per IP; auth_handlers.go;
+                          probes.go: /api/health, /api/ready; static.go: web build with index.html fallback
+migrations/               goose SQL files (00001 jobs, 00002 users + refresh_tokens), embedded by embed.go
 scripts/create-db.sql     one-time role + database creation on a native PostgreSQL
 .github/workflows/ci.yml  gofmt, vet, build, Docker image build
 ```
 
-Planned packages (see `docs/PLAN.md` "Code layout"): auth, crypto, money, importer, labels, dedup, transfers,
+Planned packages (see `docs/PLAN.md` "Code layout"; crypto is named vault): money, importer, labels, dedup, transfers,
 categorize, ml, recurring, budgets, forecast, insights, export.
 
 New migration: `migrations/000NN_name.sql` with `-- +goose Up` / `-- +goose Down`; it runs on the next start.
@@ -52,6 +59,8 @@ transaction).
 
 ## Conventions
 
+- Handlers are `handlerFunc` returning errors; return `apiError` helpers (errValidation, errNotFound…) for client
+  errors, anything else is logged and becomes a 500.
 - Every query filters on `user_id`; never trust an id from the request without that filter.
 - Money is `int64` cents, signed (negative = out). Never `float64` for money.
 - Sensitive text (labels, merchants, notes, rule patterns) is stored encrypted (`_enc` columns, `internal/crypto`);
@@ -76,4 +85,6 @@ transaction).
   but cannot run (virtualization off in the BIOS).
 - ✅ M1: pool, embedded migrations on startup, `.env` loading, `/api/ready`, job queue + worker (checked on the
   real database: migration applied, a job without handler fails and is rescheduled 30 s later, unlocked).
-- Next: M2 (users, argon2id, JWT + refresh rotation, auth middleware, rate limits, KEK/DEK crypto).
+- ✅ M2: register/login/refresh/logout/me, argon2id, JWT + rotating refresh tokens (cookie for web, body for
+  mobile with `client: "mobile"`), stolen-token family revocation, rate limits, vault (KEK/DEK). Smoke-tested.
+- Next: M3 (banks, accounts, default categories).

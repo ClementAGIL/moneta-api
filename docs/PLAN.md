@@ -73,7 +73,7 @@ internal/db/                pgx pool, goose migrations (embedded from migrations
 internal/httpapi/           router, middleware (logging, recover, auth, CORS, rate limit, body limit), errors
 internal/httpapi/handlers/  one file per resource (auth, accounts, imports, transactions, stats, ...)
 internal/auth/              argon2id hashing, JWT issue/verify, refresh-token rotation
-internal/crypto/            envelope encryption (KEK → per-user DEK), AES-GCM seal/open, blind index (HMAC)
+internal/vault/             envelope encryption (KEK → per-user DEK), AES-GCM seal/open, blind index (HMAC)
 internal/money/             int64 cents, parse "1 234,56" / "-12.30" / "12,30 €", format
 internal/importer/          detect (type, encoding, delimiter, header row), grid (CSV/XLSX → [][]string),
                             mapping (profile → rows), values (dates, amounts), fingerprint (header hash)
@@ -317,7 +317,7 @@ Free-text search `q` runs in Go over the user's decrypted labels in the date ran
 | --- | --------------------------------------------------------------------------------------------- | ------------ |
 | M0  | ✅ Scaffold: `/api/health`, web app serving, Dockerfile, compose, CI, docs                     | W0           |
 | M1  | ✅ DB: pgx pool, goose embedded migrations, `.env` loading, `/api/ready`, job queue + worker   |              |
-| M2  | Auth: users, argon2id, JWT, refresh rotation, auth middleware, rate limits, crypto (KEK/DEK)  | W1           |
+| M2  | ✅ Auth: users, argon2id, JWT, refresh rotation, auth middleware, rate limits, crypto (KEK/DEK)  | W1           |
 | M3  | Banks, accounts, default categories                                                           | W2           |
 | M4  | Import: detect, grid, profiles, mapping, parse, dedup, review, commit, undo                   | W3           |
 | M5  | Labels/merchants, built-in + user rules, corrections, transactions list/search                | W4           |

@@ -39,6 +39,12 @@ To serve the web app from the same process (production), build [moneta-app](../m
 `docker compose up -d --build` starts PostgreSQL, the API and the web app (Caddy) on port 8000, with `../moneta-app`
 checked out next to this repo. Handy to try the project without installing Go or PostgreSQL; CI builds both images.
 
+## API
+
+JSON under `/api/v1`. Done so far: `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`,
+`GET /me`; probes `GET /api/health` and `/api/ready`. Errors look like
+`{"error": {"code": "validation", "message": "...", "fields": {...}}}`.
+
 ## Security model
 
 Labels, merchant names and notes are encrypted with a per-user key, itself wrapped by a master key from the

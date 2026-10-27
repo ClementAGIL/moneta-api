@@ -27,8 +27,3 @@ func webApp(dir string) http.Handler {
 		http.ServeFile(w, r, index)
 	})
 }
-
-// apiNotFound keeps unknown /api/ paths as JSON 404s instead of returning the web app.
-func apiNotFound(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-}
